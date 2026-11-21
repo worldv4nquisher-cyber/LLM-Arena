@@ -116,6 +116,7 @@ test("keyless fight API serves complete replays and local 3D assets; classic rem
     "/fight.js",
     "/fight-scene.js",
     "/fight-choreography.js",
+    "/fight-models.js",
     "/fight-engine.js",
     "/fight.css",
     "/vendor/three.module.js",
