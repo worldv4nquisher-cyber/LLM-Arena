@@ -1,5 +1,6 @@
 // One contact cue drives the rig, projectiles, HUD, sound and impact effects.
 import { fightTimeAt } from "./fight-broadcast.js";
+import { eventTarget } from './strategy-rules.js';
 
 export const CONTACT = 0.48;
 export const RELEASE = 0.22;
@@ -35,7 +36,7 @@ export const isRanged = (action) => ["blast", "ultimate"].includes(action);
 
 export function sidestep(beat, side, progress) {
   if (beat.actions[side] !== "evade") return 0;
-  const caught = beat.events.some((e) => e.player !== side && e.damage > 0);
+  const caught = beat.events.some((e) => eventTarget(e) === side && e.damage > 0);
   // A failed dodge starts a step but is caught back in the attack lane at contact.
   // Successful dodges stay out of that lane while the attack passes through it.
   return ease(progress / 0.25) * (1 - (caught
@@ -54,7 +55,7 @@ export function motion(action, progress) {
 }
 
 export function reaction(beat, side, progress) {
-  const event = beat.events.find((e) => e.player !== side);
+  const event = beat.events.find((e) => eventTarget(e) === side);
   const struck = event?.damage > 0;
   const recoil = struck
     ? ease((progress - CONTACT) / 0.08) * (1 - ease((progress - 0.65) / 0.35))

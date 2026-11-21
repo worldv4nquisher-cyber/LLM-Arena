@@ -1,601 +1,190 @@
-import { fighters, styles, actionNames } from "./fight-engine.js";
-import { buildBroadcast, broadcastAt, roundCall } from "./fight-broadcast.js";
-import { CONTACT, playbackCues, advancePlayback } from "./fight-choreography.js";
-import { ArenaAudio } from "./fight-audio.js";
+import { fighters } from './fight-engine.js';
+import { baseMoves, movePool, ultimates, eventTarget } from './strategy-rules.js';
+import { buildBroadcast, broadcastAt, roundCall, entranceStatus } from './fight-broadcast.js';
+import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
+import { ArenaAudio } from './fight-audio.js';
 
-const venueAudio = new ArenaAudio();
-
-const $ = (id) => document.getElementById(id);
-const symbols = {
-  gpt: "✧",
-  claude: "✺",
-  gemini: "✦",
-  deepseek: "≋",
-  grok: "♆",
-};
-const players = [$("player-0"), $("player-1")],
-  tactics = [$("tactic-0"), $("tactic-1")];
-let scene,
-  replay,
-  timeline,
-  elapsed = 0,
-  playing = false,
-  lastFrame,
-  lastBeat = "",
-  lastPhase = "",
-  finished = false,
-  loading = false;
-let lastCommentary = -Infinity;
-let combatCues = [];
-let savedMatches = [];
-try {
-  const saved = JSON.parse(localStorage.getItem("celestial-matches") ?? "[]");
-  if (Array.isArray(saved))
-    savedMatches = saved
-      .filter(
-        (m) =>
-          m &&
-          Array.isArray(m.players) &&
-          m.players.length === 2 &&
-          m.players.every((id) => fighters.some((f) => f.id === id)) &&
-          Array.isArray(m.wins) &&
-          m.wins.length === 2 &&
-          m.wins.every(Number.isInteger) &&
-          Number.isSafeInteger(m.seed) &&
-          Array.isArray(m.tactics) &&
-          m.tactics.length === 2 &&
-          m.tactics.every((t) => Object.hasOwn(styles, t)),
-      )
-      .slice(0, 8);
-} catch {
-  /* Private browsing and damaged history must not prevent a match. */
+const $ = id => document.getElementById(id), audio = new ArenaAudio();
+const players = [$('player-0'),$('player-1')], controls = [$('controller-0'),$('controller-1')];
+const symbols = {gpt:'✧',claude:'✺',gemini:'✦',deepseek:'≋',grok:'♆'}, ranges = {near:'近',mid:'中',far:'远'};
+const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map(m=>[m.id,m.name]));
+const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
+const fighter = id => fighters.find(f=>f.id===id);
+let scene, replay, timeline, controllers=[], history=[], elapsed=0, playing=false, loading=false, finished=false;
+let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[];
+const config = side => fighter(replay&&currentGame>=0 ? replay.players[replay.games[currentGame].sides[side]] : players[side].value);
+const pct = n => `${(n*100).toFixed(1)}%`, delta = n => `${n>=0?'+':''}${(n*100).toFixed(1)}pp`;
+function node(tag,text,className) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;}
+function option(value,text) {const e=node('option',text);e.value=value;return e;}
+async function json(url,options) {const r=await fetch(url,options),data=await r.json();if(!r.ok)throw new Error(data.error||'请求失败，请重试。');return data;}
+const post = (url,body) => json(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+async function poll(url,onProgress) {
+  while(true) {const job=await json(url);if(job.status==='error')throw new Error(job.error||'任务失败');if(job.status==='done')return job;onProgress(job.progress);await new Promise(r=>setTimeout(r,500));}
 }
-
-function config(i) {
-  return fighters.find((f) => f.id === players[i].value);
+function announce(title,subtitle='',eyebrow='CELESTIAL STRATEGY',kind='slate') {
+  const e=$('center-announcement');e.classList.remove('hidden');e.classList.toggle('result',kind==='result');e.dataset.kind=kind;
+  e.querySelector('strong').textContent=title;e.querySelector('span').textContent=subtitle;e.querySelector('small').textContent=eyebrow;
 }
-function option(value, text) {
-  const el = document.createElement("option");
-  el.value = value;
-  el.textContent = text;
-  return el;
-}
-players.forEach((select, i) => {
-  fighters.forEach((f) =>
-    select.append(option(f.id, `${f.name} · ${f.title}`)),
-  );
-  select.value = i ? "claude" : "gpt";
-  Object.entries(styles).forEach(([id, name]) =>
-    tactics[i].append(option(id, name)),
-  );
-  tactics[i].value = config(i).style;
-  select.addEventListener("change", () => {
-    tactics[i].value = config(i).style;
-    resetSelection();
-  });
-  tactics[i].addEventListener("change", resetSelection);
-});
-
 function updateNames() {
-  players.forEach((_, i) => {
-    const f = config(i);
-    $(`name-${i}`).textContent = f.name;
-    $(`title-${i}`).textContent = f.title;
-    $(`portrait-${i}`).textContent = symbols[f.id];
-    $(`hud-${i}`).style.setProperty("--fighter", f.color);
-    $(`config-${i}`).style.setProperty("--fighter", f.color);
-  });
-  document.querySelectorAll(".roster-card").forEach((card) => {
-    const selected = card.dataset.fighter === players[0].value;
-    card.classList.toggle("selected", selected);
-    card.setAttribute("aria-pressed", String(selected));
-    card.querySelector(".roster-p1").textContent = selected ? "P1" : "";
+  players.forEach((_,i)=>{const f=config(i);$(`name-${i}`).textContent=f.name;$(`title-${i}`).textContent=f.title;$(`portrait-${i}`).textContent=symbols[f.id];$(`hud-${i}`).style.setProperty('--fighter',f.color);$(`config-${i}`).style.setProperty('--fighter',fighter(players[i].value).color);});
+  document.querySelectorAll('.roster-card').forEach(e=>{const selected=e.dataset.fighter===players[0].value;e.classList.toggle('selected',selected);e.setAttribute('aria-pressed',String(selected));});
+}
+function updateStats(states=[0,1].map(()=>({hp:100,energy:0,stamina:100,budgetLeft:24})),wins=[0,0]) {
+  states.forEach((s,i)=>{
+    $(`hp-${i}`).textContent=s.hp;
+    for(const key of ['health','energy','stamina'])$(`${key}-${i}`).style.width=`${key==='health'?s.hp:s[key]}%`;
+    $(`stamina-value-${i}`).textContent=s.stamina;$(`energy-${i}`).parentElement.title=`能量 ${s.energy}/100`;
+    $(`budget-${i}`).textContent=`思考 ${s.budgetLeft}/24`;$(`scouted-${i}`).hidden=!s.scouted;
+    $(`wins-${i}`).textContent=[0,1].map(n=>wins[i]>n?'◆':'◇').join(' ');
   });
 }
-function updateStats(
-  states = [
-    { hp: 100, energy: 15 },
-    { hp: 100, energy: 15 },
-  ],
-  wins = [0, 0],
-) {
-  states.forEach((state, i) => {
-    $(`hp-${i}`).textContent = state.hp;
-    $(`health-${i}`).style.width = `${state.hp}%`;
-    $(`energy-${i}`).style.width = `${state.energy}%`;
-    $(`wins-${i}`).textContent = [0, 1]
-      .map((n) => (wins[i] > n ? "◆" : "◇"))
-      .join(" ");
-  });
+function lock(locked) {[...players,...controls,$('series-games'),...document.querySelectorAll('.roster-card')].forEach(e=>e.disabled=locked);}
+function reset() {
+  replay=null;playing=false;finished=false;elapsed=0;currentGame=-1;lastBeat='';lastPhase='';
+  scene?.setFighters(players.map(p=>fighter(p.value)));if(scene){scene.pose=null;scene.presentation=null;}
+  updateNames();updateStats();
+  for(const id of ['draft-card','review-card','series-results','broadcast-highlight'])$(id).hidden=true;
+  for(let i=0;i<2;i++){$(`reason-${i}`).textContent='等待策略指令';$(`status-${i}`).textContent='';}
+  $('range-band').textContent='远';$('clock').textContent='30';$('game-label').textContent='三局两胜';$('round-label').textContent='ROUND 01';
+  $('stage-ticker').textContent='场地平静 · 九格战场';$('pause').disabled=true;$('replay').disabled=true;$('broadcast-state').textContent='赛前准备';
+  $('battle-feed').replaceChildren(node('li','等待第一声开赛铃。','feed-empty'));$('feed-counter').textContent='READY';$('commentary').textContent='选择形象与控制器，让策略真正上场。';
+  $('broadcast').dataset.phase='ready';announce('胜负，即将揭晓。','同时出招 · 读招博弈 · 计划连招');
 }
-function announce(
-  title,
-  subtitle = "",
-  eyebrow = "CELESTIAL CLASH",
-  result = false,
-) {
-  const el = $("center-announcement");
-  el.classList.remove("hidden");
-  el.classList.toggle("result", result);
-  el.dataset.kind = result ? "result" : "slate";
-  el.querySelector("strong").textContent = title;
-  el.querySelector("span").textContent = subtitle;
-  el.querySelector("small").textContent = eyebrow;
-}
-function resetSelection() {
-  if (playing) return;
-  replay = null;
-  finished = false;
-  elapsed = 0;
-  lastBeat = "";
-  lastPhase = "";
-  scene?.setFighters(players.map((_, i) => config(i)));
-  if (scene) scene.presentation = null;
-  $("broadcast-highlight").hidden = true;
-  document.querySelector(".broadcast").dataset.phase = "ready";
-  updateNames();
-  updateStats();
-  $("clock").textContent = "45";
-  $("round-label").textContent = "ROUND 01";
-  $("replay").disabled = true;
-  $("pause").disabled = true;
-  $("broadcast-state").textContent = "赛前准备";
-  $("pause").textContent = "Ⅱ 暂停";
-  $("start").textContent = "▶ 开始比赛";
-  $("feed-counter").textContent = "READY";
-  const emptyFeed = document.createElement("li");
-  emptyFeed.className = "feed-empty";
-  emptyFeed.textContent = "等待第一声开赛铃。";
-  $("battle-feed").replaceChildren(emptyFeed);
-  $("commentary").textContent =
-    `${config(0).name} 对阵 ${config(1).name}。双方已就位，等待开赛。`;
-  announce(
-    "胜负，即将揭晓。",
-    "选好你的选手，开启一场智能对决",
-    "THE STAGE IS YOURS",
-  );
-}
-
-fighters.forEach((f) => {
-  const card = document.createElement("button");
-  card.className = "roster-card";
-  card.dataset.fighter = f.id;
-  card.style.setProperty("--fighter", f.color);
-  card.setAttribute("aria-label", `选择 ${f.name} 作为一号选手`);
-  const icon = document.createElement("span");
-  icon.className = "roster-symbol";
-  icon.textContent = symbols[f.id];
-  const text = document.createElement("span");
-  const name = document.createElement("b");
-  name.textContent = f.name;
-  const title = document.createElement("small");
-  title.textContent = f.title;
-  text.append(name, title);
-  const caption = document.createElement("span");
-  caption.className = "roster-caption";
-  caption.textContent = f.description;
-  const badge = document.createElement("span");
-  badge.className = "roster-p1";
-  card.append(icon, text, caption, badge);
-  card.addEventListener("click", () => {
-    if (playing) return;
-    players[0].value = f.id;
-    tactics[0].value = f.style;
-    resetSelection();
-  });
-  $("fighter-roster").append(card);
+players.forEach((select,i)=>{fighters.forEach(f=>select.append(option(f.id,`${f.name} · ${f.title}`)));select.value=i?'claude':'gpt';select.addEventListener('change',reset);controls[i].addEventListener('change',reset);});
+$('series-games').addEventListener('change',reset);
+fighters.forEach(f=>{
+  const e=node('button',undefined,'roster-card');e.dataset.fighter=f.id;e.style.setProperty('--fighter',f.color);e.setAttribute('aria-label',`选择 ${f.name} 作为一号选手`);
+  const text=node('span');text.append(node('b',f.name),node('small',f.title));e.append(node('span',symbols[f.id],'roster-symbol'),text,node('span',f.description,'roster-caption'));
+  e.addEventListener('click',()=>{players[0].value=f.id;reset();});$('fighter-roster').append(e);
 });
-
-$("sound").addEventListener("click", async () => {
-  $("sound").disabled = true;
-  try {
-    const sound = await venueAudio.toggle();
-    $("sound").setAttribute("aria-pressed", String(sound));
-    $("sound").setAttribute(
-      "aria-label",
-      sound ? "关闭比赛音效" : "开启比赛音效",
-    );
-    $("sound").querySelector("span").textContent = sound ? "音效开" : "音效关";
-    if (sound) venueAudio.bell();
-  } catch {
-    $("sound").querySelector("span").textContent = "音效不可用";
-  } finally {
-    $("sound").disabled = false;
-  }
-});
-
-document.querySelectorAll("[data-camera]").forEach((button) =>
-  button.addEventListener("click", () => {
-    if (scene) scene.cameraMode = button.dataset.camera;
-    document
-      .querySelectorAll("[data-camera]")
-      .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
-  }),
-);
-
-function lockSettings(locked) {
-  [
-    ...players,
-    ...tactics,
-    ...document.querySelectorAll(".roster-card"),
-  ].forEach((el) => {
-    el.disabled = locked;
-  });
+function draftCard(game) {
+  const card=$('draft-card');card.replaceChildren(node('h3',`第 ${currentGame+1} 局 · ${currentGame?'换边 · ':''}赛前选招`),node('p',`禁招：${game.draft.bans.map(moveName).join(' / ')}`,'card-kicker'));
+  const columns=node('div',undefined,'strategy-columns');
+  game.draft.selections.forEach((s,i)=>{const col=node('div');col.append(node('h4',`${i?'右':'左'} · ${config(i).name}`),node('p',`招式 ${s.picks.map(moveName).join(' · ')}`),node('p',`绝技 ${moveName(s.ultimate)}`),node('p',`自创「${s.custom.name}」· 伤害 ${4+3*s.custom.damage} · ${s.custom.range.map(r=>ranges[r]).join('/')} · 启动 ${5-s.custom.speed}`),node('small',s.reason||'裁判采用默认配置'));if(game.draft.mistakes[i].length)col.append(node('p','选招失误 · 已由裁判替换','warning'));columns.append(col);});card.append(columns);
 }
-function beginPlayback() {
-  timeline = buildBroadcast(replay);
-  combatCues = playbackCues(timeline);
-  elapsed = 0;
-  lastBeat = "";
-  lastPhase = "";
-  finished = false;
-  playing = true;
-  lastFrame = undefined;
-  scene.resetPose();
-  scene.paused = false;
-  lastCommentary = -Infinity;
-  $("broadcast-highlight").hidden = true;
-  $("battle-feed").replaceChildren();
-  $("feed-counter").textContent = "LIVE";
-  $("pause").disabled = false;
-  $("pause").textContent = "Ⅱ 暂停";
-  $("replay").disabled = false;
-  $("start").textContent = "↻ 重新开赛";
-  $("round-label").textContent = "ROUND 01";
-  $("clock").textContent = "45";
-  $("broadcast-state").textContent = "回合准备";
-  $("commentary").textContent =
-    `${config(0).name} 对阵 ${config(1).name}。比赛即将开始。`;
-  lockSettings(true);
-  updateStats();
+function reviewCard(round) {
+  const card=$('review-card'),columns=node('div',undefined,'strategy-columns');card.replaceChildren(node('h3',`回合复盘 · ${roundCall(round)}`));
+  round.reviews.forEach((r,i)=>{const col=node('div');col.append(node('h4',config(i).name),node('p',r.notes));columns.append(col);});card.append(columns);
 }
-
-function updateHistoryControls() {
-  document.querySelectorAll(".history-replay").forEach((button) => {
-    button.disabled = loading || !scene;
-  });
+function resetEntrance(game) {
+  const status=entranceStatus(game);
+  $('clock').textContent=status.clock;$('round-label').textContent=status.roundLabel;$('range-band').textContent=status.rangeLabel;$('feed-counter').textContent=status.feedCounter;
 }
-
+function begin() {
+  timeline=buildBroadcast(replay);cues=playbackCues(timeline);elapsed=0;playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
+  scene.resetPose();scene.paused=false;$('series-results').hidden=true;$('battle-feed').replaceChildren();$('pause').disabled=false;$('pause').textContent='Ⅱ 暂停';$('replay').disabled=false;$('start').textContent='↻ 重新开赛';lock(true);
+  resetEntrance(replay.games[0]);
+}
+function historyControls() {document.querySelectorAll('.history-replay').forEach(e=>e.disabled=loading||!scene);}
 async function startMatch(seed) {
-  if (loading || !scene) return;
-  loading = true;
-  $("start").disabled = true;
-  $("edit-settings").disabled = true;
-  $("replay").disabled = true;
-  updateHistoryControls();
-  playing = false;
-  $("pause").disabled = true;
-  lockSettings(true);
-  announce("选手准备中", "正在生成完整赛况…");
+  if(loading||!scene||!controllers.length)return;
+  loading=true;playing=false;lock(true);$('start').disabled=true;$('edit-settings').disabled=true;$('pause').disabled=true;$('replay').disabled=true;
+  for(const id of ['draft-card','review-card','series-results'])$(id).hidden=true;
+  historyControls();announce('后台计算中','正在创建系列赛…');
   try {
-    const response = await fetch("/api/fights", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        players: players.map((p) => p.value),
-        tactics: tactics.map((p) => p.value),
-        ...(seed === undefined ? {} : { seed }),
-      }),
-    });
-    if (!response.ok) throw new Error("比赛生成失败，请重试。");
-    replay = await response.json();
-    beginPlayback();
-  } catch (error) {
-    playing = false;
-    replay = null;
-    $("replay").disabled = true;
-    lockSettings(false);
-    announce("暂时无法开赛", error.message, "PLEASE TRY AGAIN");
-    $("broadcast-state").textContent = "连接异常";
-    $("commentary").textContent = "未生成比赛。请检查连接后重新开赛。";
-  } finally {
-    loading = false;
-    $("start").disabled = false;
-    $("edit-settings").disabled = false;
-    updateHistoryControls();
-  }
-}
-function watchMatch() {
-  if (window.matchMedia("(max-width: 800px)").matches)
-    $("broadcast").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-$("start").addEventListener("click", () => {
-  startMatch();
-  watchMatch();
-});
-$("edit-settings").addEventListener("click", () => {
-  if (loading) return;
-  playing = false;
-  lockSettings(false);
-  resetSelection();
-  $("match-setup").scrollIntoView({ behavior: "smooth", block: "start" });
-  players[0].focus({ preventScroll: true });
-});
-$("replay").addEventListener("click", () => {
-  if (replay && !loading) {
-    beginPlayback();
-    watchMatch();
-  }
-});
-$("pause").addEventListener("click", () => {
-  if (!replay || finished) return;
-  playing = !playing;
-  $("pause").textContent = playing ? "Ⅱ 暂停" : "▶ 继续";
-  $("broadcast-state").textContent = playing ? "比赛继续" : "比赛已暂停";
-  lastPhase = "";
-  lastFrame = undefined;
-});
-
-function feed(text, round, tick) {
-  const li = document.createElement("li");
-  const label = document.createElement("strong");
-  label.textContent = `R${round} · ${String(tick + 1).padStart(2, "0")} `;
-  li.append(label, document.createTextNode(text));
-  $("battle-feed").prepend(li);
-  while ($("battle-feed").children.length > 24)
-    $("battle-feed").lastChild.remove();
-}
-function finish() {
-  finished = true;
-  playing = false;
-  lockSettings(false);
-  $("pause").disabled = true;
-  $("broadcast-state").textContent = "比赛结束";
-  $("feed-counter").textContent = "FINAL";
-  $("broadcast-highlight").hidden = true;
-  document.querySelector(".broadcast").dataset.phase = "complete";
-  scene.pose = null;
-  scene.presentation = {
-    type: "result",
-    states: replay.rounds.at(-1).beats.at(-1).states,
-    winner: replay.winner,
-  };
-  const title =
-    replay.winner === null
-      ? "势均力敌 · 平局"
-      : `${config(replay.winner).name} 获胜`;
-  announce(
-    title,
-    `${replay.wins[0]} : ${replay.wins[1]}  ·  三局两胜`,
-    "MATCH COMPLETE",
-    true,
-  );
-  $("commentary").textContent =
-    replay.winner === null
-      ? "双方鏖战三轮，最终握手言和。"
-      : `${config(replay.winner).title}拿下本场胜利！这是策略与时机的较量。`;
-  venueAudio.victory();
-  scene.stage.react(1.8);
-  const record = {
-    players: replay.players,
-    wins: replay.wins,
-    seed: replay.seed,
-    tactics: replay.tactics,
-  };
-  if (
-    !savedMatches.some(
-      (m) =>
-        m.seed === record.seed &&
-        String(m.players) === String(record.players) &&
-        String(m.tactics) === String(record.tactics),
-    )
-  ) {
-    savedMatches.unshift(record);
-    savedMatches = savedMatches.slice(0, 8);
-    try {
-      localStorage.setItem("celestial-matches", JSON.stringify(savedMatches));
-    } catch {
-      /* Match playback also works without storage. */
-    }
-  }
-  renderHistory();
+    const {id}=await post('/api/fights',{players:players.map(p=>p.value),controllers:controls.map(c=>c.value),games:Number($('series-games').value),...(seed===undefined?{}:{seed})});
+    const job=await poll(`/api/fights/${id}`,p=>{const text=`后台计算中 · 第${p.game||1}局 第${p.round||1}回合`;$('broadcast-state').textContent=text;announce(text,`正在推演第 ${p.turn||0} 拍，完成后正常速度演出。`);});
+    replay=job.replay;begin();
+  }catch(error){replay=null;lock(false);announce('暂时无法开赛',error.message);$('broadcast-state').textContent='计算失败';$('commentary').textContent=error.message;}
+  finally{loading=false;$('start').disabled=!scene;$('edit-settings').disabled=false;historyControls();}
 }
 function renderHistory() {
-  if (!savedMatches.length) return;
-  $("history").replaceChildren();
-  savedMatches.forEach((m) => {
-    const row = document.createElement("div");
-    row.className = "history-row";
-    const names = m.players.map((id) => fighters.find((f) => f.id === id).name);
-    const name = document.createElement("span");
-    name.textContent = `${names[0]}  vs  ${names[1]}`;
-    const score = document.createElement("strong");
-    score.textContent = `${m.wins[0]} : ${m.wins[1]}`;
-    const button = document.createElement("button");
-    button.className = "history-replay";
-    button.textContent = "回看比赛 ↗";
-    button.setAttribute(
-      "aria-label",
-      `回看 ${names[0]} 对阵 ${names[1]}，${m.wins[0]} 比 ${m.wins[1]}`,
-    );
-    button.addEventListener("click", () => {
-      if (loading || !scene) return;
-      playing = false;
-      players.forEach((p, i) => {
-        p.value = m.players[i];
-        tactics[i].value = m.tactics[i];
-      });
-      resetSelection();
-      startMatch(m.seed);
-      $("broadcast").scrollIntoView({ behavior: "smooth", block: "start" });
+  $('history').replaceChildren();if(!history.length){$('history').textContent='尚无完赛记录，第一场传奇由你开启。';return;}
+  history.forEach(m=>{
+    const row=node('div',undefined,'history-row'),button=node('button','回看比赛 ↗','history-replay');
+    button.addEventListener('click',()=>{
+      if(loading||!scene)return;playing=false;lock(false);players.forEach((p,i)=>p.value=m.players[i]);
+      if(m.replay){replay=m.replay;begin();}
+      else if(m.controllers.every(id=>controllers.some(c=>c.id===id))){controls.forEach((c,i)=>c.value=m.controllers[i]);$('series-games').value=String(m.games);startMatch(m.seed);}
+      else announce('控制器未配置','这场比赛使用的真实模型当前不可用。');
+      $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
     });
-    row.append(name, score, button);
-    $("history").append(row);
-  });
-  updateHistoryControls();
+    row.append(node('span',m.players.map(id=>fighter(id).name).join(' vs ')),node('strong',`${m.wins.join(' : ')} · ${m.games}局`),button);$('history').append(row);
+  });historyControls();
+}
+function table(headers,rows) {
+  const e=node('table'),head=node('thead'),tr=node('tr');headers.forEach(h=>tr.append(node('th',h)));head.append(tr);e.append(head);
+  const body=node('tbody');rows.forEach(values=>{const row=node('tr');values.forEach(v=>row.append(node('td',v)));body.append(row);});e.append(body);return e;
+}
+function improvement(s) {
+  const a=s.betweenRoundImprovement,v=Array.isArray(a)?{damageShare:a.reduce((n,x)=>n+x.damageShare,0)/Math.max(1,a.length),predictionRate:a.reduce((n,x)=>n+x.predictionRate,0)/Math.max(1,a.length)}:a;
+  return `伤害 ${delta(v.damageShare)} / 预判 ${delta(v.predictionRate)}`;
+}
+const controllerLabel = id => controllers.find(c=>c.id===id)?.label||id;
+function resultTable() {
+  const panel=$('series-results'),winner=replay.series.winner;
+  panel.replaceChildren(node('h2',winner===null?'系列赛平局':`${fighter(replay.players[winner]).name} 赢得系列赛`),node('p',`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛 · SEED ${replay.seed}`,'card-kicker'));
+  const scroll=node('div',undefined,'table-scroll');scroll.append(table(['选手 / 控制器','胜局','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],replay.series.stats.map((s,i)=>[`${fighter(replay.players[i]).name} / ${controllerLabel(replay.controllers[i])}`,replay.series.wins[i],pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));panel.append(scroll);panel.hidden=false;
+}
+function finish() {
+  finished=true;playing=false;lock(false);$('pause').disabled=true;$('broadcast-state').textContent='系列赛结束';$('feed-counter').textContent='FINAL';
+  for(const id of ['draft-card','review-card','broadcast-highlight'])$(id).hidden=true;$('broadcast').dataset.phase='complete';
+  const game=replay.games.at(-1),winner=replay.series.winner;
+  scene.pose=null;scene.presentation={type:'result',states:game.rounds.at(-1).beats.at(-1).states,winner:winner===null?null:game.sides.indexOf(winner)};
+  announce(winner===null?'系列赛 · 平局':`${fighter(replay.players[winner]).name} 获胜`,`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛`,'SERIES COMPLETE','result');
+  $('commentary').textContent='策略已见分晓。下方查看双方能力统计与完整系列赛比分。';resultTable();audio.victory();scene.stage.react(1.8);
+  const record={players:replay.players,controllers:replay.controllers,games:replay.games.length,wins:replay.series.wins,seed:replay.seed,replay};
+  history=[record,...history.filter(m=>m.seed!==record.seed||String(m.players)!==String(record.players)||String(m.controllers)!==String(record.controllers)||m.games!==record.games)].slice(0,8);
+  try{localStorage.setItem('celestial-strategy-matches',JSON.stringify(history));}catch{/* Playback also works without storage. */}
+  renderHistory();refreshLadder();
+}
+function beatDetails(beat,round,index) {
+  updateStats(beat.states,round.round>1?replay.games[currentGame].rounds[round.round-2].wins:[0,0]);
+  for(let i=0;i<2;i++){$(`reason-${i}`).textContent=beat.reasons[i];$(`status-${i}`).textContent=beat.mistakes[i]?'失误·硬直':beat.planDriven[i]?'连招计划':'';$(`status-${i}`).classList.toggle('warning',!!beat.mistakes[i]);}
+  $('range-band').textContent=`${ranges[beat.band]}${beat.cells.some(c=>c===0||c===8)?' · 边缘':''}`;
+  $('commentary').textContent=beat.commentary+' '+beat.predictions.map((p,i)=>`${config(i).name}预判${moveName(p)}${beat.planDriven[i]?' · 连招计划':''}${beat.feints[i]?' · 佯攻成功':''}${beat.moves[i]==='scout'?' · 侦察完成':''}${beat.mistakes[i]?' · 失误·硬直':''}`).join('；');
+  const items=beat.stage.items.map(x=>`${{heal:'治疗',energy:'能量',stamina:'体力'}[x.type]}道具@${x.cell}`),dangers=beat.stage.dangers.map(d=>`危险区 ${d.cells.join('/')} · -6 HP`),collected=beat.events.filter(e=>e.outcome==='item').map(e=>`${config(e.player).name}拾取道具`);
+  $('stage-ticker').textContent=[...collected,...items,...dangers].join(' · ')||'场地平静 · 九格战场';
+  $('battle-feed').prepend(node('li',`G${currentGame+1} R${round.round} · ${index+1} ${beat.names.join(' / ')}`));while($('battle-feed').children.length>24)$('battle-feed').lastChild.remove();$('feed-counter').textContent=`${index+1} EXCHANGES`;
+  beat.events.forEach(e=>{if(!e.damage)return;const n=$(`damage-${eventTarget(e)}`);n.textContent=`−${e.damage}`;n.classList.remove('pop');void n.offsetWidth;n.classList.add('pop');});audio.exchange(beat.events);
 }
 function frame(now) {
-  // Normal playback follows wall-clock time. Stalled renderers still show the
-  // decisive contact and follow-through instead of skipping entire exchanges.
-  const dt = Math.max(0, (now - (lastFrame ?? now)) / 1000);
-  lastFrame = now;
-  if (scene) {
-    scene.paused = Boolean(replay && !playing && !finished);
-    document.querySelector(".broadcast").dataset.paused = String(scene.paused);
-  }
-  venueAudio.setPaused(document.hidden || Boolean(replay && !playing && !finished));
-  if (playing && replay && scene) {
-    elapsed = advancePlayback(elapsed, dt * Number($("speed").value), combatCues, dt);
-    const shot = broadcastAt(timeline, elapsed);
-    document.querySelector(".broadcast").dataset.phase = shot.type;
-    $("broadcast-highlight").hidden = !shot.slowMotion;
-    if (shot.type === "complete") finish();
-    else if (shot.type === "entrance") {
-      scene.pose = null;
-      scene.presentation = shot;
-      if (lastPhase !== `entrance${shot.player}`) {
-        lastPhase = `entrance${shot.player}`;
-        const f = config(shot.player);
-        announce(
-          `${f.name} · ${f.title}`,
-          `${styles[tactics[shot.player].value]}  /  绝技「${f.skill}」`,
-          `P${shot.player + 1} ENTRANCE / ${f.provider.toUpperCase()}`,
-        );
-        $("center-announcement").dataset.kind = "entrance";
-        $("center-announcement").style.setProperty("--intro-color", f.color);
-        $("broadcast-state").textContent = "选手入场";
-        $("commentary").textContent = `${f.name}，${f.title}，登场！${f.description}。`;
-        $("clock").textContent = "45";
-        $("round-label").textContent = "ROUND 01";
-        $("feed-counter").textContent = "ENTRANCE";
-        venueAudio.note(shot.player ? 660 : 440, 0.3, 0.04, "triangle");
-      }
-    } else {
-      const { round } = shot;
-      const previousWins = round.round > 1
-        ? replay.rounds[round.round - 2].wins
-        : [0, 0];
-      $("round-label").textContent =
-        `ROUND ${String(round.round).padStart(2, "0")}`;
-      if (shot.type === "countdown") {
-        scene.pose = null;
-        scene.presentation = null;
-        const count = Math.min(3, Math.floor(shot.progress * 3.8));
-        const key = `countdown${round.round}-${count}`;
-        if (lastPhase !== key) {
-          lastPhase = key;
-          updateStats(undefined, previousWins);
-          announce(
-            count === 3 ? "开战！" : String(3 - count),
-            `${config(0).name}  VS  ${config(1).name}`,
-            `ROUND ${round.round} / ${count === 3 ? "FIGHT" : "READY"}`,
-          );
-          $("center-announcement").dataset.kind = "countdown";
-          $("broadcast-state").textContent = "开赛倒计时";
-          $("clock").textContent = "45";
-          $("feed-counter").textContent = "COUNTDOWN";
-          $("commentary").textContent = count === 3
-            ? `第 ${round.round} 回合，开战！`
-            : `第 ${round.round} 回合即将开始。当前比分 ${previousWins[0]} : ${previousWins[1]}，双方准备就绪。`;
-          if (count === 3) venueAudio.bell();
-          else venueAudio.note(540, 0.1, 0.04, "triangle");
-        }
-      } else if (shot.type === "fight") {
-        const { index, progress, beat } = shot;
-        const key = `${round.round}-${index}`;
-        scene.presentation = { type: "fight", slowMotion: shot.slowMotion };
-        scene.setPose(
-          index ? round.beats[index - 1].states : [{ x: -2.1 }, { x: 2.1 }],
-          beat,
-          progress,
-          key,
-        );
-        $("center-announcement").classList.add("hidden");
-        $("broadcast-state").textContent = "比赛进行中";
-        $("clock").textContent = Math.max(0, 45 - index);
-        if (lastBeat !== key && progress >= CONTACT) {
-          lastBeat = key;
-          updateStats(beat.states, previousWins);
-          const special = beat.events.find((e) => e.action === "ultimate");
-          let line;
-          if (special)
-            line = `${config(special.player).name} 释放「${config(special.player).skill}」！${special.outcome === "block" ? "对手及时格挡。" : special.outcome === "evade" ? "被惊险闪过！" : `造成 ${special.damage} 点伤害！`}`;
-          else {
-            const e = beat.events.find((e) => e.damage > 4) ?? beat.events[0];
-            line = e
-              ? `${config(e.player).name} ${actionNames[e.action]}，${e.outcome === "miss" ? "距离不足，未命中。" : e.outcome === "evade" ? "被对手闪避！" : e.outcome === "block" ? "被成功格挡。" : `命中！造成 ${e.damage} 点伤害。`}`
-              : `${actionNames[beat.actions[0]]} 对上 ${actionNames[beat.actions[1]]}，双方寻找破绽。`;
-          }
-          // Keep normal calls readable; key hits interrupt and receive their
-          // own slow-motion hold. The detailed feed still logs every exchange.
-          if (shot.keyHit || elapsed - lastCommentary >= 2.8) {
-            $("commentary").textContent = line;
-            lastCommentary = elapsed;
-          }
-          feed(line, round.round, index);
-          $("feed-counter").textContent = `${index + 1} EXCHANGES`;
-          beat.events.forEach((e) => {
-            if (!e.damage) return;
-            const el = $(`damage-${1 - e.player}`);
-            el.textContent = e.outcome === "block" ? "格挡" : `−${e.damage}`;
-            el.classList.remove("pop");
-            void el.offsetWidth;
-            el.classList.add("pop");
-          });
-          venueAudio.exchange(beat.events);
-        }
-      } else if (shot.type === "outro") {
-        scene.pose = null;
-        scene.presentation = {
-          type: "outro",
-          states: round.beats.at(-1).states,
-          winner: round.winner,
-        };
-        if (lastPhase !== `outro${round.round}`) {
-          lastPhase = `outro${round.round}`;
-          updateStats(round.beats.at(-1).states, round.wins);
-          const result = round.winner === null
-            ? "本轮平局"
-            : `${config(round.winner).name} 拿下本轮`;
-          const score = `${round.wins[0]} : ${round.wins[1]}`;
-          announce(roundCall(round), `${result}  ·  总比分 ${score}`, `ROUND ${round.round} COMPLETE`);
-          $("center-announcement").dataset.kind = "outro";
-          $("broadcast-state").textContent = "回合结束";
-          $("feed-counter").textContent = "ROUND COMPLETE";
-          $("commentary").textContent = `${result}！当前比分 ${score}。${round === replay.rounds.at(-1) ? "胜负已定，等待最终赛果。" : "稍作调整，准备下一回合。"}`;
-          venueAudio.knockout();
-          scene.stage.react(1.8);
+  const dt=Math.max(0,(now-(lastFrame??now))/1000);lastFrame=now;
+  if(scene){scene.paused=Boolean(replay&&!playing&&!finished);$('broadcast').dataset.paused=String(scene.paused);}audio.setPaused(document.hidden||Boolean(replay&&!playing&&!finished));
+  if(playing&&replay&&scene){
+    elapsed=advancePlayback(elapsed,dt*Number($('speed').value),cues,dt);const shot=broadcastAt(timeline,elapsed);$('broadcast').dataset.phase=shot.type;
+    $('draft-card').hidden=shot.type!=='entrance';$('review-card').hidden=shot.type!=='outro';$('broadcast-highlight').hidden=!shot.slowMotion;
+    if(shot.type==='complete')finish();else{
+      if(currentGame!==shot.gameIndex){currentGame=shot.gameIndex;lastPhase='';lastBeat='';scene.setFighters([config(0),config(1)]);scene.resetPose();updateNames();updateStats();draftCard(shot.game);for(let i=0;i<2;i++){$(`reason-${i}`).textContent='等待策略指令';$(`status-${i}`).textContent='';}$('stage-ticker').textContent=currentGame?'换边 · 双方交换左右位置与禁招顺序':'赛前选招 · 同时提交，公平对决';}
+      $('game-label').textContent=`第 ${currentGame+1}/${replay.games.length} 局${currentGame?' · 换边':''}`;
+      const phaseKey=`${currentGame}-${shot.type}-${shot.round?.round}-${shot.player}`;
+      if(shot.type==='entrance'){
+        scene.pose=null;scene.presentation=shot;
+        if(lastPhase!==phaseKey){lastPhase=phaseKey;resetEntrance(shot.game);const f=config(shot.player);announce(`${currentGame?'换边 · ':''}${f.name} 登场`,`${f.title} · ${replay.controllers[shot.game.sides[shot.player]]}`,'DRAFT / ENTRANCE','entrance');$('broadcast-state').textContent='赛前选招';$('commentary').textContent='双方禁招后同时选招，自创招须通过10点预算校验。';}
+      }else{
+        const {round}=shot;$('round-label').textContent=`ROUND ${String(round.round).padStart(2,'0')}`;const wins=round.round>1?shot.game.rounds[round.round-2].wins:[0,0];
+        if(shot.type==='countdown'){
+          scene.pose=null;scene.presentation=null;const count=Math.min(3,Math.floor(shot.progress*3.8)),key=`${phaseKey}-${count}`;
+          if(lastPhase!==key){lastPhase=key;const budgets=round.round>1?shot.game.rounds[round.round-2].beats.at(-1).states.map(s=>s.budgetLeft):[24,24];updateStats([0,1].map(i=>({hp:100,energy:0,stamina:100,budgetLeft:budgets[i]})),wins);for(let i=0;i<2;i++){$(`reason-${i}`).textContent='准备下一回合';$(`status-${i}`).textContent='';}$('range-band').textContent='远';$('stage-ticker').textContent='九格战场 · 双方回到起点';announce(count===3?'开战！':String(3-count),`${config(0).name} VS ${config(1).name}`,`第 ${currentGame+1} 局 · 第 ${round.round} 回合`,'countdown');$('clock').textContent='30';$('broadcast-state').textContent='开赛倒计时';if(count===3)audio.bell();}
+        }else if(shot.type==='fight'){
+          const key=`${currentGame}-${round.round}-${shot.index}`;scene.presentation={type:'fight',slowMotion:shot.slowMotion};scene.setPose(shot.index?round.beats[shot.index-1].states:[{x:-2.1},{x:2.1}],shot.beat,shot.progress,key);$('center-announcement').classList.add('hidden');$('broadcast-state').textContent='比赛进行中';$('clock').textContent=30-shot.index;
+          if(lastBeat!==key&&shot.progress>=CONTACT){lastBeat=key;beatDetails(shot.beat,round,shot.index);}
+        }else if(shot.type==='outro'){
+          scene.pose=null;scene.presentation={type:'outro',states:round.beats.at(-1).states,winner:round.winner};
+          if(lastPhase!==phaseKey){lastPhase=phaseKey;updateStats(round.beats.at(-1).states,round.wins);reviewCard(round);announce(roundCall(round),`${round.winner===null?'本轮平局':`${config(round.winner).name} 拿下本轮`} · ${round.wins.join(' : ')}`,'ROUND COMPLETE','outro');$('broadcast-state').textContent='回合复盘';$('commentary').textContent=round.reviews.map((r,i)=>`${config(i).name}：${r.notes}`).join('；');audio.knockout();}
         }
       }
     }
   }
   requestAnimationFrame(frame);
 }
-updateNames();
-renderHistory();
-$("start").disabled = true;
-try {
-  const { FightScene } = await import("./fight-scene.js");
-  scene = new FightScene(
-    $("scene"),
-    players.map((_, i) => config(i)),
-  );
-  $("loading-scene").remove();
-  $("start").disabled = false;
-  updateHistoryControls();
-  updateNames();
-  $("scene").addEventListener("rendererror", () => {
-    playing = false;
-    $("start").disabled = true;
-    $("pause").disabled = true;
-    announce("3D 画面已中断", "请刷新页面重新连接渲染器。", "RENDERER OFFLINE");
-  });
-} catch (error) {
-  $("loading-scene").textContent =
-    "此浏览器暂时无法启用 3D。请使用支持 WebGL 的 Chrome、Edge 或 Firefox。";
-  $("center-announcement").classList.add("hidden");
-  $("commentary").textContent =
-    "无法初始化 3D 渲染器。请启用浏览器硬件加速后刷新。";
-  console.error("3D initialization failed:", error);
+$('start').addEventListener('click',()=>startMatch());
+$('edit-settings').addEventListener('click',()=>{if(loading)return;lock(false);reset();players[0].focus();});
+$('replay').addEventListener('click',()=>{if(replay&&!loading)begin();});
+$('pause').addEventListener('click',()=>{if(!replay||finished)return;playing=!playing;$('pause').textContent=playing?'Ⅱ 暂停':'▶ 继续';$('broadcast-state').textContent=playing?'比赛继续':'比赛已暂停';lastFrame=undefined;});
+document.querySelectorAll('[data-camera]').forEach(button=>button.addEventListener('click',()=>{if(scene)scene.cameraMode=button.dataset.camera;document.querySelectorAll('[data-camera]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));}));
+$('sound').addEventListener('click',async()=>{try{const enabled=await audio.toggle();$('sound').setAttribute('aria-pressed',String(enabled));$('sound').querySelector('span').textContent=enabled?'音效开':'音效关';}catch{$('sound').querySelector('span').textContent='音效不可用';}});
+document.addEventListener('keydown',event=>{if(event.repeat||event.altKey||event.ctrlKey||event.metaKey||['INPUT','SELECT','TEXTAREA','BUTTON','A'].includes(event.target.tagName))return;if(event.code==='Space'){event.preventDefault();$('pause').click();}if(event.key.toLowerCase()==='r')$('replay').click();if(['1','2','3'].includes(event.key))document.querySelectorAll('[data-camera]')[Number(event.key)-1].click();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing)$('pause').click();});
+async function refreshLadder(){
+  try{const rows=await json('/api/ladder');$('ladder-table').replaceChildren(table(['控制器','场 / 胜 / 负 / 平','胜率','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],rows.map(s=>[controllerLabel(s.id),`${s.games} / ${s.wins} / ${s.losses} / ${s.draws}`,pct(s.winRate),pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));$('ladder-status').textContent=rows.length?'能力统计按累计决策次数加权 · 回合间提升为百分点变化':'暂无战绩。完成一场比赛，或运行内置天梯。';}catch(error){$('ladder-status').textContent=error.message;}
 }
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && playing) $("pause").click();
-  venueAudio.setPaused(document.hidden || Boolean(replay && !playing && !finished));
-});
-// Browser history may restore native select values after module initialization.
-// Synchronize all dependent visuals after that restoration, including BFCache.
-window.addEventListener("pageshow", () => {
-  if (!replay) resetSelection();
-  else updateNames();
-});
-requestAnimationFrame(frame);
+$('run-ladder').addEventListener('click',async()=>{ $('run-ladder').disabled=true;try{$('ladder-status').textContent='后台计算中 · 内置天梯';const {id}=await post('/api/ladder/run',{games:2});await poll(`/api/ladder/run/${id}`,p=>{$('ladder-status').textContent=`后台计算中 · 天梯 ${p.completed||0}/${p.total||10} 组 · 第${p.game||1}局 第${p.round||1}回合`;});await refreshLadder();}catch(error){$('ladder-status').textContent=error.message;}finally{$('run-ladder').disabled=false;} });
+try{const saved=JSON.parse(localStorage.getItem('celestial-strategy-matches')||'[]');if(Array.isArray(saved))history=saved.filter(m=>m&&Array.isArray(m.players)&&m.players.length===2&&m.players.every(id=>fighter(id))&&Array.isArray(m.wins)&&m.wins.length===2&&Array.isArray(m.controllers)&&m.controllers.length===2&&Number.isSafeInteger(m.seed)).slice(0,8);}catch{/* Ignore damaged local history. */}
+reset();renderHistory();requestAnimationFrame(frame);
+try{
+  controllers=await json('/api/controllers');if(!controllers.length)throw new Error('没有可用控制器');controls.forEach((s,i)=>{controllers.forEach(c=>s.append(option(c.id,c.label)));s.value=`builtin:${players[i].value}`;});
+  const {FightScene}=await import('./fight-scene.js');scene=new FightScene($('scene'),players.map(p=>fighter(p.value)));$('loading-scene').remove();$('start').disabled=false;historyControls();
+  $('scene').addEventListener('rendererror',()=>{playing=false;$('start').disabled=true;$('pause').disabled=true;announce('3D 画面已中断','请刷新页面重新连接渲染器。');});
+}catch(error){$('loading-scene').textContent='无法初始化比赛，请检查连接与 WebGL 支持。';announce('暂时无法载入',error.message);console.error('Arena initialization failed:',error);}
+refreshLadder();

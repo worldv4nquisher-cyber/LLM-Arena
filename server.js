@@ -4,8 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { games, newBoard, legalMoves, play } from './public/rules.js';
 import { availableModels, demoMove, liveMove, ModelError } from './opponents.js';
-import { fighters, simulateFight } from './public/fight-engine.js';
-import { randomInt } from 'node:crypto';
+import { fighters } from './public/fight-engine.js';
+import { randomInt, randomUUID } from 'node:crypto';
+import { createBuiltinController, personalities, liveController } from './fight-controllers.js';
+import { runSeries } from './fight-match.js';
+import { createLadder } from './fight-ladder.js';
 
 const assets = new Map([
   ['/', ['fight.html', 'text/html; charset=utf-8']],
@@ -24,6 +27,7 @@ const assets = new Map([
   ['/arena.css', ['arena.css', 'text/css; charset=utf-8']],
   ['/arena.js', ['arena.js', 'text/javascript; charset=utf-8']],
   ['/rules.js', ['rules.js', 'text/javascript; charset=utf-8']],
+  ['/strategy-rules.js', ['strategy-rules.js', 'text/javascript; charset=utf-8']],
   ['/arena.svg', ['arena.svg', 'image/svg+xml']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']],
 ]);
@@ -36,24 +40,46 @@ function json(res, status, value) {
 async function matchInput(req) {
   const chunks = [];
   let length = 0;
-  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
-    length += chunk.length;
-    if (length > 2048) {
-      req.resume();
-      return null;
-    }
-    chunks.push(chunk);
-  }
   try {
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+      length += chunk.length;
+      if (length > 2048) {
+        req.resume();
+        return null;
+      }
+      chunks.push(chunk);
+    }
     return JSON.parse(Buffer.concat(chunks).toString());
   } catch {
     return null;
   }
 }
 
-export function createArena({ env = process.env, turnDelay, request = fetch } = {}) {
+export function createArena({ env = process.env, turnDelay, request = fetch, ladder = createLadder(), deadlines } = {}) {
   const models = availableModels(env);
   let liveInProgress = false;
+  const controllers = [
+    ...personalities.map(id => ({id:`builtin:${id}`, label:`内置策略 ${id}`, mode:'builtin'})),
+    ...Object.entries(models).filter(([,m])=>m.mode==='live').map(([id,m])=>({id,label:`${m.description} ${m.name}`,mode:'live'})),
+  ];
+  const jobs = new Map();
+  const validJSON = req => req.headers['sec-fetch-site'] !== 'cross-site' &&
+    req.headers['content-type']?.split(';')[0].trim() === 'application/json' &&
+    (!req.headers.origin || req.headers.origin === `http://${req.headers.host}` || req.headers.origin === `https://${req.headers.host}`);
+  function reserveJob() {
+    while(jobs.size>=20) {
+      const finished=[...jobs].find(([,job])=>job.status!=='running');
+      if(!finished)return null;
+      jobs.delete(finished[0]);
+    }
+    const id=randomUUID(),job={status:'running',progress:{game:0,round:0,turn:0}};
+    jobs.set(id,job);return {id,job};
+  }
+  const brain=(id,seed)=>id.startsWith('builtin:')?createBuiltinController(id.slice(8),{seed}):liveController(id,models[id],{request});
+  async function compute(input,job) {
+    const replay=await runSeries({...input,controllers:input.controllers.map(id=>brain(id,input.seed)),memory:await ladder.memory(input.controllers),deadlines,onProgress:p=>{job.progress=p;}});
+    await ladder.record(replay);return replay;
+  }
 
   return createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -77,17 +103,55 @@ export function createArena({ env = process.env, turnDelay, request = fetch } = 
         ({ id, name, description, mode })));
     }
     if (req.method === 'GET' && path === '/api/fighters') return json(res, 200, fighters);
+    if (req.method === 'GET' && path === '/api/controllers') return json(res, 200, controllers);
+    if (req.method === 'GET' && path === '/api/ladder') return json(res, 200, await ladder.snapshot());
+    if (req.method === 'GET' && (/^\/api\/fights\/[^/]+$/.test(path)||/^\/api\/ladder\/run\/[^/]+$/.test(path))) {
+      const job=jobs.get(path.split('/').at(-1));
+      return json(res,job?200:404,job||{error:'找不到比赛任务。'});
+    }
+    if(req.method==='POST' && path==='/api/ladder/run') {
+      if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 比赛请求。'});
+      const input=await matchInput(req),count=input?.games??2;
+      if(!input||typeof input!=='object'||Array.isArray(input)||!Number.isInteger(count)||count<1||count>20)return json(res,400,{error:'场数必须为1到20。'});
+      const reserved=reserveJob();if(!reserved)return json(res,429,{error:'比赛任务已满，请稍后重试。'});
+      const {id,job}=reserved;
+      setImmediate(async()=>{
+        try {
+          let completed=0;
+          for(let a=0;a<personalities.length;a++)for(let b=a+1;b<personalities.length;b++) {
+            const players=[personalities[a],personalities[b]];
+            await compute({players,controllers:players.map(p=>`builtin:${p}`),games:count,seed:randomInt(0x100000000)},job);
+            job.progress={...job.progress,completed:++completed,total:10};
+          }
+          job.status='done';job.result={completed,games:completed*count};
+        }catch{job.status='error';job.error='天梯运行失败。';}
+      });
+      return json(res,202,{id});
+    }
     if (req.method === 'POST' && path === '/api/fights') {
-      if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
+      if (!validJSON(req)) {
         return json(res, 415, { error: '仅接受本站的 JSON 比赛请求。' });
       }
       try {
         const input = await matchInput(req);
-        if (!input || typeof input !== 'object') throw new Error('Invalid request');
-        const replay = simulateFight({ players: input.players, tactics: input.tactics, seed: input.seed ?? randomInt(0x100000000) });
-        return json(res, 200, replay);
+        if (!input || !Array.isArray(input.players)||input.players.length!==2||!input.players.every(id=>fighters.some(f=>f.id===id)) ||
+            !Array.isArray(input.controllers)||input.controllers.length!==2||!input.controllers.every(id=>controllers.some(c=>c.id===id)) ||
+            ![1,2,4].includes(input.games??2) || (input.seed!==undefined&&(!Number.isSafeInteger(input.seed)||input.seed<0||input.seed>0xffffffff))) throw new Error('Invalid request');
+        const isLive=input.controllers.some(id=>models[id]?.mode==='live');
+        if(isLive&&liveInProgress)return json(res,429,{error:'已有真实模型对局进行中，请稍后再试。'});
+        const reserved=reserveJob();if(!reserved)return json(res,429,{error:'比赛任务已满，请稍后重试。'});
+        const {id,job}=reserved;
+        if(isLive)liveInProgress=true;
+        setImmediate(async()=>{
+          try {
+            job.replay=await compute({players:input.players,controllers:input.controllers,games:input.games??2,seed:input.seed??randomInt(0x100000000)},job);
+            job.status='done';
+          }catch(error){job.status='error';job.error=error instanceof ModelError?error.message:'比赛计算失败。';}
+          finally{if(isLive)liveInProgress=false;}
+        });
+        return json(res, 202, {id});
       } catch {
-        return json(res, 400, { error: '请选择两位有效选手和战术。' });
+        return json(res, 400, { error: '请选择两位有效选手、控制器及场数（1、2、4）。' });
       }
     }
     if (req.method !== 'POST' || path !== '/api/matches') return json(res, 404, { error: '未找到。' });

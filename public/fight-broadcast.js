@@ -1,8 +1,14 @@
 // Presentation time is separate from the deterministic simulation. Replaying or
 // changing speed must never change a hit, the round score, or the winner.
+import { eventTarget, createState, bands } from './strategy-rules.js';
 const slowStart = 0.23;
 const slowEnd = 0.7;
 const slowRate = 0.28;
+
+export function entranceStatus(game) {
+  const cells=createState().fighters.map(f=>f.cell);
+  return {clock:30,roundLabel:`ROUND ${String(game.rounds[0]?.round??1).padStart(2,'0')}`,rangeLabel:{near:'近',mid:'中',far:'远'}[bands(cells[1]-cells[0])],feedCounter:'ENTRANCE'};
+}
 
 export function isKeyHit(beat) {
   return beat.events.some(
@@ -10,7 +16,7 @@ export function isKeyHit(beat) {
       event.damage > 0 &&
       (event.action === "ultimate" ||
         event.damage >= 12 ||
-        beat.states[1 - event.player].hp === 0),
+        beat.states[eventTarget(event)]?.hp === 0),
   );
 }
 
@@ -22,6 +28,16 @@ export function roundCall(round) {
 }
 
 export function buildBroadcast(replay) {
+  if (replay.games) {
+    let duration = 0;
+    const segments = replay.games.flatMap((game, gameIndex) => {
+      const broadcast = buildBroadcast({ ...game, beatDuration: 1.35 });
+      const parts = broadcast.segments.map(part => ({ ...part, start: part.start + duration, end: part.end + duration, game, gameIndex }));
+      duration += broadcast.duration;
+      return parts;
+    });
+    return { segments, duration };
+  }
   const segments = [];
   let end = 0;
   const add = (type, duration, data = {}) => {

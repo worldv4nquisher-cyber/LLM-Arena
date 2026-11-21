@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { simulateFight } from "../public/fight-engine.js";
-import { buildBroadcast, broadcastAt, isKeyHit, roundCall } from "../public/fight-broadcast.js";
+import { buildBroadcast, broadcastAt, isKeyHit, roundCall, entranceStatus } from "../public/fight-broadcast.js";
+
+test('entrance status clears prior clock, range and feed for replay and swapped drafts',()=>{
+  for(const sides of [[0,1],[1,0]]) {
+    const previous={clock:11,roundLabel:'ROUND 02',rangeLabel:'近',feedCounter:'FINAL'};
+    assert.deepEqual({...previous,...entranceStatus({sides,rounds:[{round:1}]})},{clock:30,roundLabel:'ROUND 01',rangeLabel:'远',feedCounter:'ENTRANCE'});
+  }
+  assert.equal(entranceStatus({rounds:[{round:2}]}).roundLabel,'ROUND 02');
+  assert.equal(entranceStatus({rounds:[]}).roundLabel,'ROUND 01');
+});
 
 test("broadcast stages each fighter and every countdown without changing replay results", () => {
   const replay = simulateFight({ players: ["gpt", "claude"], seed: 374849025 });
@@ -62,4 +71,21 @@ test("round slates distinguish time-limit draws from actual double knockouts", (
   assert.equal(roundCall(round([20, 0], 0)), "K.O.");
   assert.equal(roundCall(round([20, 10], 0)), "TIME UP");
   assert.equal(roundCall(round([20, 20], null)), "DRAW");
+});
+
+test("strategy series concatenates every game with distinct side and round context", () => {
+  const beat = {actions:["guard","guard"],events:[],states:[{hp:100},{hp:100}]};
+  const games = [0,1].map(i => ({sides:i?[1,0]:[0,1],rounds:[{round:1,beats:[beat],winner:null,wins:[0,0]}]}));
+  const replay = {version:2,games}, original = structuredClone(replay);
+  const timeline = buildBroadcast(replay);
+  assert.equal(timeline.segments.filter(s=>s.type==='entrance').length,4);
+  assert.equal(timeline.segments.filter(s=>s.type==='fight').length,2);
+  const swapped = timeline.segments.find(s=>s.gameIndex===1);
+  assert.deepEqual(swapped.game.sides,[1,0]);
+  assert.equal(broadcastAt(timeline,swapped.start).gameIndex,1);
+  assert.equal(broadcastAt(timeline,swapped.start).type,'entrance');
+  assert.ok(timeline.segments.every((s,i,a)=>i===0||Math.abs(s.start-a[i-1].end)<1e-9));
+  assert.equal(broadcastAt(timeline,timeline.duration).type,'complete');
+  assert.deepEqual(replay,original);
+  assert.deepEqual(buildBroadcast({games:[]}),{segments:[],duration:0});
 });

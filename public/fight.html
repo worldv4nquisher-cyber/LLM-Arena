@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#151321" />
     <meta
       name="description"
-      content="在星穹擂台观看 AI 拟人选手的 3D 格斗比赛。选择选手、配置战术、切换机位，零密钥即可试玩。"
+      content="在星穹擂台观看 AI 策略格斗。独立选择形象与控制器，选招、读招、连招、换边系列赛，内置策略零密钥试玩。"
     />
     <title>LLM ARENA · 星穹格斗场</title>
     <link rel="icon" href="/icon.svg" />
@@ -36,7 +36,7 @@
           </div>
           <h1>星穹格斗场 <span>CELESTIAL CLASH</span></h1>
         </div>
-        <div class="demo-label">内置策略演示 <span>无需 API 密钥</span></div>
+        <div class="demo-label">策略对决 · 同时出招 <span>内置策略无需密钥</span></div>
       </div>
       <div class="arena-layout">
         <section class="broadcast" id="broadcast" aria-label="3D 比赛直播">
@@ -63,10 +63,13 @@
                 <span id="wins-0">◇ ◇</span>
                 <div class="energy-track"><div id="energy-0"></div></div>
               </div>
+              <div class="resource-line"><span>体力</span><div class="stamina-track"><div id="stamina-0"></div></div><b id="stamina-value-0">100</b></div>
+              <div class="strategy-meta"><span id="budget-0">思考 24/24</span><span id="scouted-0" hidden>已侦察</span></div>
+              <p class="reason-bubble" id="reason-0">等待策略指令</p><span class="turn-status" id="status-0"></span>
             </div>
             <div class="round-clock">
               <span id="round-label">ROUND 01</span
-              ><strong id="clock">45</strong><small>BEST OF 3</small>
+              ><strong id="clock">30</strong><small id="game-label">三局两胜</small><span id="range-band" class="range-chip">远</span>
             </div>
             <div class="fighter-hud right" id="hud-1">
               <div class="fighter-heading">
@@ -82,6 +85,9 @@
                 <span id="wins-1">◇ ◇</span>
                 <div class="energy-track"><div id="energy-1"></div></div>
               </div>
+              <div class="resource-line"><span>体力</span><div class="stamina-track"><div id="stamina-1"></div></div><b id="stamina-value-1">100</b></div>
+              <div class="strategy-meta"><span id="budget-1">思考 24/24</span><span id="scouted-1" hidden>已侦察</span></div>
+              <p class="reason-bubble" id="reason-1">等待策略指令</p><span class="turn-status" id="status-1"></span>
             </div>
           </div>
           <div id="center-announcement" class="announcement">
@@ -91,6 +97,9 @@
           <div id="damage-0" class="damage left"></div>
           <div id="damage-1" class="damage right"></div>
           <div id="broadcast-highlight" class="broadcast-highlight" hidden>关键命中 · 慢镜</div>
+          <section id="draft-card" class="strategy-card" hidden aria-label="赛前选招"></section>
+          <section id="review-card" class="strategy-card" hidden aria-label="回合复盘"></section>
+          <div id="stage-ticker" class="stage-ticker" aria-live="polite">场地平静 · 九格战场</div>
           <div class="camera-tools" role="group" aria-label="摄像机视角">
             <span>机位</span
             ><button data-camera="broadcast" aria-pressed="true">导播</button
@@ -110,7 +119,7 @@
             <p id="commentary" aria-live="polite">
               欢迎来到星穹庭院。两位选手已就位，等待开赛。
             </p>
-            <span class="on-air">DEMO FEED</span>
+            <span class="on-air">STRATEGY FEED</span>
           </div>
         </section>
         <aside class="control-panel" id="match-setup" aria-label="对局设置">
@@ -119,7 +128,7 @@
             <span>01 / FIGHT</span>
           </div>
           <p class="setup-help">
-            选择双方选手与战术，开赛后自动对战。
+            形象与控制器独立选择。先计算，再连续演出。
           </p>
           <div class="player-config" id="config-0">
             <div class="config-label">
@@ -127,8 +136,8 @@
             </div>
             <label for="player-0">选择选手</label
             ><select id="player-0" aria-label="一号选手"></select
-            ><label for="tactic-0">作战策略</label
-            ><select id="tactic-0" aria-label="一号选手战术"></select>
+            ><label for="controller-0">决策控制器</label
+            ><select id="controller-0" aria-label="一号控制器"></select>
           </div>
           <div class="versus"><span></span> VS <span></span></div>
           <div class="player-config" id="config-1">
@@ -137,15 +146,16 @@
             </div>
             <label for="player-1">选择选手</label
             ><select id="player-1" aria-label="二号选手"></select
-            ><label for="tactic-1">作战策略</label
-            ><select id="tactic-1" aria-label="二号选手战术"></select>
+            ><label for="controller-1">决策控制器</label
+            ><select id="controller-1" aria-label="二号控制器"></select>
           </div>
+          <label class="series-setting" for="series-games">系列赛场数<select id="series-games"><option value="1">1 局</option><option value="2" selected>2 局 · 换边</option><option value="4">4 局 · 轮流换边</option></select></label>
           <div class="match-controls" aria-label="比赛播放控制">
             <div class="match-actions">
               <button id="start" class="primary-button" disabled>
                 <span>▶</span> 开始比赛 <span>↗</span>
               </button>
-              <button id="edit-settings" title="结束当前观赛，调整选手与战术">
+              <button id="edit-settings" title="结束当前观赛，调整选手与控制器">
                 调整对局
               </button>
             </div>
@@ -162,7 +172,7 @@
             </div>
           </div>
           <p class="mode-note">
-            本场由本地策略驱动，并非真实 LLM 推理。<br />先计算、后演出，比赛画面不等待网络。
+            内置策略免费；已配置的真实模型按回合调用并产生费用。<br />空格 暂停 · R 重播 · 1/2/3 机位
           </p>
           <div class="feed-heading">
             <h3>场边速报</h3>
@@ -173,6 +183,11 @@
           </ol>
         </aside>
       </div>
+      <section id="series-results" class="results-panel" hidden aria-label="系列赛统计"></section>
+      <section id="ladder-section" class="ladder-panel">
+        <div class="section-heading"><h2>天梯 <span>STRATEGY LADDER</span></h2><button id="run-ladder">运行内置天梯</button></div>
+        <p id="ladder-status" role="status">正在读取天梯…</p><div id="ladder-table" class="table-scroll"></div>
+      </section>
       <section id="lineup" class="lineup">
         <div class="section-heading">
           <h2>登场选手 <span>THE CONTENDERS</span></h2>
