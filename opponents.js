@@ -75,12 +75,30 @@ function httpReason(status, model) {
 }
 
 export function parseMove(content) {
-  const text = String(content ?? '');
-  for (const candidate of [text.trim(), ...(text.match(/\{[^{}]*\}/g) ?? [])]) {
-    try {
-      const move = JSON.parse(candidate)?.move;
-      if (Number.isInteger(move)) return move;
-    } catch { /* Try the next candidate. */ }
+  if (typeof content !== 'string') return null;
+  for (let start = 0; start < content.length; start++) {
+    if (content[start] !== '{') continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let end = start; end < content.length; end++) {
+      const char = content[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '{') depth++;
+      else if (char === '}' && --depth === 0) {
+        try {
+          let move = JSON.parse(content.slice(start, end + 1)).move;
+          if (typeof move === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(move.trim())) {
+            move = Number(move);
+          }
+          return Number.isSafeInteger(move) ? move : null;
+        } catch { break; }
+      }
+    }
   }
   return null;
 }
@@ -128,5 +146,5 @@ export async function liveMove(id, model, game, board, player, signal, request =
   const move = parseMove(content);
   const truncated = openai ? data.status === 'incomplete' : data.stop_reason === 'max_tokens';
   if (move === null && truncated) throw new ModelError('输出达到长度上限，未给出落子', JSON.stringify(data).slice(0, 300));
-  return move;
+  return { move, raw: content ?? '' };
 }

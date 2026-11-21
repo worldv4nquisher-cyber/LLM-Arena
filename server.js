@@ -99,11 +99,16 @@ export function createArena({ env = process.env, turnDelay, request = fetch } = 
         const id = input.players[player - 1];
         const model = models[id];
         send({ type: 'turn', player });
-        const move = model.mode === 'demo' ? demoMove(id, game, board, player) :
+        const response = model.mode === 'demo' ? { move: demoMove(id, game, board, player) } :
           await liveMove(id, model, game, board, player, signal, request);
+        const { move, raw } = response;
         await delay(playbackDelay, undefined, { signal });
         if (!legalMoves(game, board).includes(move)) {
-          send({ type: 'result', winner: 3 - player, reason: 'illegal-move' });
+          const unit = game.gravity ? '列' : '格';
+          const detail = move === null ? `无法解析：${JSON.stringify(raw.slice(0, 80))}` :
+            move < 1 || move > (game.gravity ? game.columns : game.rows * game.columns) ?
+              `落子 ${move} 超出范围` : `第 ${move} ${unit}${game.gravity ? '已满' : '已被占用'}`;
+          send({ type: 'result', winner: 3 - player, reason: 'illegal-move', invalidPlayer: player, detail });
           break;
         }
         const next = play(game, board, player, move);

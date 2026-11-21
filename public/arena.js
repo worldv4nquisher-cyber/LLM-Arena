@@ -204,7 +204,7 @@ async function startMatch() {
           ended = true;
           const forfeit = event.reason === 'illegal-move';
           const winner = event.winner === 0 ? '平局' : `${playerLabel(event.winner, players)} 获胜`;
-          status(forfeit ? `${winner} · 对手落子无效` : winner, 'result');
+          status(forfeit ? `${winner} · ${playerLabel(event.invalidPlayer, players)} 落子无效（${event.detail}）` : winner, 'result');
           event.line?.forEach(([row, col]) => cells[row][col].classList.add('win'));
           history = readHistory(history);
           history.unshift({
