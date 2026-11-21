@@ -8,6 +8,8 @@ import {createLadder} from '../fight-ladder.js';
 import {createState,resolveTurn,seededRng,makeView,planMatches} from '../public/strategy-rules.js';
 import {reaction,CONTACT} from '../public/fight-choreography.js';
 import {isKeyHit} from '../public/fight-broadcast.js';
+import {runSeries} from '../fight-match.js';
+import {createBuiltinController} from '../fight-controllers.js';
 
 function providerReply(view) {
   if(view.phase==='ban')return {ban:view.pool[0].id};
@@ -102,4 +104,16 @@ test('hazards have a target but no attacker and cannot satisfy combat plan condi
   const combat={events:[{player:1,damage:8,outcome:'hit'}]};
   assert.equal(planMatches('hit',makeView(result.state,1),combat,1),true);
   assert.equal(planMatches('was_hit',makeView(result.state,0),combat,0),true);
+});
+
+test('mirror match memory preserves positional sides across swapped games',async()=>{
+  const ladder=createLadder({path:null}),controllers=[0,1].map(()=>createBuiltinController('gpt',{seed:7})),ids=controllers.map(c=>c.id);
+  assert.deepEqual(await ladder.memory(ids),[]);
+  const replay=await runSeries({players:['gpt','claude'],controllers,games:2,seed:7});
+  await ladder.record(replay);
+  const memory=await ladder.memory(ids);
+  assert.deepEqual(memory.map(m=>m.sides),[[0,1],[1,0]]);
+  assert.deepEqual(memory.map(m=>m.opponentMoveFrequencies),replay.memory.map(m=>m.opponentMoveFrequencies));
+  memory[0].sides[0]=1;
+  assert.deepEqual((await ladder.memory(ids))[0].sides,[0,1]);
 });

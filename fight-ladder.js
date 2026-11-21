@@ -18,7 +18,7 @@ export function createLadder({path=new URL('./data/ladder.json',import.meta.url)
   }
   return {
     async snapshot(){await ready;return Object.entries(entries).map(([id,s])=>({id,games:s.games,wins:s.wins,losses:s.losses,draws:s.draws,winRate:s.wins/Math.max(1,s.games),mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionCategoryHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionExactHitRate:(s.predictionsExactCorrect||0)/Math.max(1,s.predictionsScored||0),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted),betweenRoundImprovement:{damageShare:s.damageImprovement/Math.max(1,s.improvements),predictionRate:s.predictionImprovement/Math.max(1,s.improvements)}})).sort((a,b)=>b.winRate-a.winRate||a.id.localeCompare(b.id));},
-    async memory(ids){await ready;const saved=pairs[pairKey(ids)]||[];return structuredClone(saved.map(s=>({...s,sides:s.controllerSides.map(id=>ids.indexOf(id))})));},
+    async memory(ids){await ready;const saved=pairs[pairKey(ids)]||[];return structuredClone(saved.map(s=>({...s,sides:ids[0]===ids[1]?s.sides:s.controllerSides.map(id=>ids.indexOf(id))})));},
     async record(replay){
       await ready;
       for(const game of replay.games)for(let side=0;side<2;side++) {
