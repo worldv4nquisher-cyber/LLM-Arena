@@ -203,7 +203,7 @@ export class FightScene {
       f.root.position.set(i ? 2 : -2, 0.07, 0);
     });
     this.pose = null;
-    this.result = null;
+    this.presentation = null;
     this.clearEffects();
   }
   clearEffects() {
@@ -219,15 +219,10 @@ export class FightScene {
   }
   resetPose() {
     this.pose = null;
-    this.result = null;
+    this.presentation = null;
     this.clearEffects();
   }
-  setResult(states, winner) {
-    this.pose = null;
-    this.result = { states, winner };
-  }
   setPose(previous, beat, progress, key) {
-    this.result = null;
     this.pose = { previous, beat, progress };
     if (key !== this.lastImpact && progress >= CONTACT) {
       this.lastImpact = key;
@@ -281,9 +276,13 @@ export class FightScene {
     this.camera.updateProjectionMatrix();
   }
   animate(now) {
-    const dt = Math.min(0.05, (now - (this.lastTime ?? now)) / 1000);
+    const dt = this.paused
+      ? 0
+      : Math.min(0.05, (now - (this.lastTime ?? now)) / 1000);
     this.lastTime = now;
-    this.time += dt;
+    const presentation = this.presentation;
+    const effectDt = dt * (presentation?.slowMotion ? 0.28 : 1);
+    this.time += effectDt;
     const t = this.time,
       pose = this.pose;
     const positions = pose ? combatPositions(pose.previous, pose.beat, pose.progress) : null;
@@ -296,12 +295,18 @@ export class FightScene {
       const { recoil, blocked, down: falling } = pose
         ? reaction(pose.beat, i, p)
         : { recoil: 0, blocked: false, down: 0 };
-      const down = this.result?.states[i].hp === 0 ? 1 : falling;
-      const victory = this.result?.winner === i && !down;
+      const entering = presentation?.type === "entrance" && presentation.player === i;
+      const staged = ["outro", "result"].includes(presentation?.type);
+      const down = staged && presentation.states[i].hp === 0 ? 1 : falling;
+      const victory = staged && presentation.winner === i && !down;
+      f.root.visible = presentation?.type !== "entrance" || i <= presentation.player;
       const evade = pose ? sidestep(pose.beat, i, p) : 0;
       const melee = isMelee(action), ranged = isRanged(action);
       const attack = melee || ranged;
-      const x = positions?.[i] ?? this.result?.states[i].x ?? (i ? 2.1 : -2.1);
+      const x = positions?.[i] ?? (staged ? presentation.states[i].x : entering
+        ? T.MathUtils.lerp(i ? 4.5 : -4.5, i ? 2.1 : -2.1,
+            T.MathUtils.smoothstep(presentation.progress, 0, 0.65))
+        : i ? 2.1 : -2.1);
       f.root.position.set(x - direction * (recoil * (blocked ? 0.06 : 0.18) + down * 0.3),
         0.07, -evade * 0.95);
       // Keep floor rings grounded: only the jointed body crouches, recoils or falls.
@@ -328,6 +333,13 @@ export class FightScene {
       });
       f.head.rotation.z = down ? direction * 0.18 : direction * recoil * 0.12 + Math.sin(t * 1.2 + i) * 0.025;
       f.head.rotation.x = down ? 0.15 : evade * 0.18;
+      if (entering) {
+        f.root.position.y = 0.07 + Math.abs(Math.sin(presentation.progress * 20)) * 0.08;
+        f.legs.forEach((leg, j) => {
+          leg.rotation.x = presentation.progress < 0.65
+            ? Math.sin(presentation.progress * 25 + j * Math.PI) * 0.4 : 0;
+        });
+      }
       f.shield.visible = action === "guard" && !down;
       f.shield.material.opacity = 0.22 + recoil * 0.28;
       f.shield.scale.set(0.83 + recoil * 0.1, 1.28, 0.83 + recoil * 0.1);
@@ -365,13 +377,13 @@ export class FightScene {
         if (p) p.visible = false;
       });
     this.particles = this.particles.filter((p) => {
-      p.life += dt;
-      p.mesh.position.addScaledVector(p.velocity, dt);
-      p.velocity.y -= dt * 4;
+      p.life += effectDt;
+      p.mesh.position.addScaledVector(p.velocity, effectDt);
+      p.velocity.y -= effectDt * 4;
       if (p.flash) {
         p.mesh.scale.setScalar(1 + p.life * 6);
         p.mesh.material.opacity = Math.max(0, 1 - p.life / 0.22);
-      } else p.mesh.scale.multiplyScalar(Math.exp(-dt * 7));
+      } else p.mesh.scale.multiplyScalar(Math.exp(-effectDt * 7));
       if (p.life > (p.flash ? 0.22 : 0.5)) {
         this.scene.remove(p.mesh);
         p.mesh.geometry.dispose();
@@ -392,21 +404,30 @@ export class FightScene {
       if (p.position.x > 12) p.position.x = -12;
     });
     const wide = this.camera.aspect < 1.25;
+    let focusX = 0;
     if (this.cameraMode === "overhead") this.camera.position.set(0, 13, 8);
     else if (this.cameraMode === "ringside")
       this.camera.position.set(0, 3.5, wide ? 15 : 11.5);
-    else
-      this.camera.position.set(
-        Math.sin(t * 0.035) * 1.7,
-        wide ? 7.5 : 4.8,
-        wide ? 19 : 12.8,
+    else {
+      const entrance = presentation?.type === "entrance";
+      const highlight = presentation?.slowMotion;
+      if (entrance) focusX = presentation.player ? 1.6 : -1.6;
+      const target = new T.Vector3(
+        entrance ? focusX + (presentation.player ? 0.7 : -0.7) : Math.sin(t * 0.035) * 1.7,
+        entrance || highlight ? (wide ? 5.8 : 3.3) : (wide ? 7.5 : 4.8),
+        entrance || highlight ? (wide ? 16.5 : 10.4) : (wide ? 19 : 12.8),
       );
-    if (this.shake > 0) {
+      // A push-in, not a random camera cut. Manual camera choices are never
+      // overridden by the director, even during a key-hit slow-motion beat.
+      if (!this.camera.position.lengthSq()) this.camera.position.copy(target);
+      else this.camera.position.lerp(target, 1 - Math.exp(-dt * 7));
+    }
+    if (this.shake > 0 && !this.paused) {
       this.camera.position.x += (Math.random() - 0.5) * this.shake;
       this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.5;
       this.shake *= Math.exp(-dt * 22);
     }
-    this.camera.lookAt(0, this.cameraMode === "overhead" ? 0 : 0.9, 0);
+    this.camera.lookAt(focusX, this.cameraMode === "overhead" ? 0 : 1.1, 0);
     this.renderer.render(this.scene, this.camera);
     this.animation = requestAnimationFrame(this.animate);
   }

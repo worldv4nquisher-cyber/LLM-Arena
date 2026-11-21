@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { CONTACT, combatPositions, motion, reaction, sidestep, playbackCues, advancePlayback } from "../public/fight-choreography.js";
 import { simulateFight } from "../public/fight-engine.js";
+import { buildBroadcast, broadcastAt, fightTimeAt } from "../public/fight-broadcast.js";
 
 test("melee closes the visual gap at contact without crossing either fighter", () => {
   for (let seed = 0; seed < 25; seed++) {
@@ -59,7 +60,15 @@ test("a failed sidestep is caught in the attack lane, not shown as a successful 
 
 test("stalled rendering cannot skip deciding contact and collapse cues", () => {
   const replay = simulateFight({ players: ["gpt", "claude"], seed: 2777097442 });
-  const cues = playbackCues(replay);
+  const timeline = buildBroadcast(replay);
+  const cues = playbackCues(timeline);
+  for (const segment of timeline.segments.filter((part) => part.type === "fight")) {
+    for (const progress of [CONTACT + 0.002, 0.68, 0.98]) {
+      const shot = broadcastAt(timeline, fightTimeAt(segment, progress));
+      assert.equal(shot.beat, segment.beat);
+      assert(Math.abs(shot.progress - progress) < 1e-9, "cue must use the slowed presentation timeline");
+    }
+  }
   let elapsed = 0;
   const seen = [];
   while (elapsed < cues.at(-1)) {
