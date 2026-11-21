@@ -77,19 +77,19 @@ test('plans save controller calls; depleted budget only exposes quick moves',asy
   const s=r.games[0].stats[0];assert.equal(s.planTurns,48);assert.equal(calls,42);assert.ok(quick>0);assert.equal(s.budgetUsed,24);
 });
 test('200-game seeded built-in round robin is varied and decisive',async()=>{
-  const wins=Object.fromEntries(personalities.map(id=>[id,0])),endings={},moves={},finishes={};
+  const wins=Object.fromEntries(personalities.map(id=>[id,0])),endings={},moves={},finishes={},lengths=[];
   for(let seed=0;seed<10;seed++)for(let a=0;a<5;a++)for(let b=a+1;b<5;b++) {
     const ids=[personalities[a],personalities[b]];
     const r=await runSeries({players:ids,controllers:ids.map(id=>createBuiltinController(id,{seed})),games:2,seed});
     for(const g of r.games){if(g.winner!==null)wins[ids[g.sides[g.winner]]]++;
-      for(const round of g.rounds){endings[round.ending]=(endings[round.ending]||0)+1;
+      for(const round of g.rounds){endings[round.ending]=(endings[round.ending]||0)+1;lengths.push(round.beats.length);
         for(const beat of round.beats)for(const m of beat.moves)moves[m]=(moves[m]||0)+1;
         const last=round.beats.at(-1);if(round.winner!==null){const m=last.moves[round.winner];finishes[m]=(finishes[m]||0)+1;}
       }
     }
   }
   console.log('BALANCE',JSON.stringify({wins,endings,moves,finishes}));
-  assert.ok(Object.values(wins).every(n=>n>0));assert.ok(endings.ko>0);assert.ok(endings['time-up']>0);assert.ok(Object.keys(moves).length>=12);assert.ok(!moves.stunned);
+  assert.ok(Object.values(wins).every(n=>n>0));assert.ok(endings.ko>0);assert.ok(lengths.some(n=>n<12));assert.ok(lengths.some(n=>n>20));assert.ok(Object.keys(moves).length>=12);assert.ok(!moves.stunned);
   assert.ok(Object.values(wins).every(n=>n>=24&&n<=60));
   const totalFinishes=Object.values(finishes).reduce((a,b)=>a+b,0);
   assert.ok(Object.values(finishes).every(n=>n/totalFinishes<=.205));

@@ -22,6 +22,16 @@ export function roundCall(round) {
 }
 
 export function buildBroadcast(replay) {
+  if (replay.games) {
+    let duration = 0;
+    const segments = replay.games.flatMap((game, gameIndex) => {
+      const broadcast = buildBroadcast({ ...game, beatDuration: 1.35 });
+      const parts = broadcast.segments.map(part => ({ ...part, start: part.start + duration, end: part.end + duration, game, gameIndex }));
+      duration += broadcast.duration;
+      return parts;
+    });
+    return { segments, duration };
+  }
   const segments = [];
   let end = 0;
   const add = (type, duration, data = {}) => {
