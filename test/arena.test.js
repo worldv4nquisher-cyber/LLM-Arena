@@ -2,7 +2,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { games, newBoard, play, legalMoves } from '../public/rules.js';
-import { demoMove } from '../opponents.js';
+import { availableModels, demoMove, parseMove } from '../opponents.js';
 import { createArena } from '../server.js';
 
 function playSequence(game, moves) {
@@ -120,7 +120,8 @@ test('two live adapters play from model moves and forfeit an illegal move', asyn
   assert.equal(models.filter(model => model.mode === 'live').length, 2);
   assert(!JSON.stringify(models).includes('mock-openai-key'));
   assert(!JSON.stringify(models).includes('mock-anthropic-key'));
-  const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'anthropic']));
+  const transcript = await events(await match(url, 'tic-tac-toe',
+    ['openai:mock-openai-model', 'anthropic:mock-anthropic-model']));
   assert.deepEqual(transcript.filter(entry => entry.type === 'move').map(entry => entry.move), [1, 5]);
   assert.deepEqual(transcript.at(-1), { type: 'result', winner: 2, reason: 'illegal-move' });
   assert.deepEqual(calls.map(call => call.endpoint), [
@@ -133,9 +134,38 @@ test('two live adapters play from model moves and forfeit an illegal move', asyn
   assert.match(JSON.parse(calls[1].body).messages[0].content, /Legal moves: 2, 3, 4, 5, 6, 7, 8, 9/);
 });
 
-test('provider errors are not wins and do not leak the upstream response', async t => {
+test('provider errors are not wins, name the failing side and do not leak the upstream response', async t => {
+  t.mock.method(console, 'error', () => {});
   const url = await server(t, { env, request: async () => new Response('private error', { status: 401 }) });
-  const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'striker']));
-  assert.deepEqual(transcript.map(event => event.type), ['turn', 'error']);
+  const transcript = await events(await match(url, 'tic-tac-toe', ['striker', 'openai:mock-openai-model']));
+  assert.deepEqual(transcript.map(event => event.type), ['turn', 'move', 'turn', 'error']);
+  assert.equal(transcript.at(-1).player, 2);
+  assert.match(transcript.at(-1).message, /^蓝方「mock-openai-model」API 密钥无效/);
   assert(!JSON.stringify(transcript).includes('private error'));
+});
+
+test('explains rate limits, unknown models, truncated output and timeouts', async t => {
+  t.mock.method(console, 'error', () => {});
+  const cases = [
+    [async () => new Response('', { status: 429 }), /红方「mock-openai-model」请求过于频繁或额度不足/],
+    [async () => new Response('', { status: 404 }), /找不到模型「mock-openai-model」/],
+    [async () => Response.json({ status: 'incomplete', output: [{ type: 'reasoning' }] }), /输出达到长度上限/],
+    [async (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason))),
+      /红方「mock-openai-model」1 秒内未响应/],
+    [async () => { throw new TypeError('fetch failed'); }, /无法连接 OpenAI 服务/],
+  ];
+  for (const [request, message] of cases) {
+    const url = await server(t, { env: { ...env, MODEL_TIMEOUT_SECONDS: '1' }, request });
+    const transcript = await events(await match(url, 'tic-tac-toe', ['openai:mock-openai-model', 'striker']));
+    assert.equal(transcript.at(-1).type, 'error');
+    assert.match(transcript.at(-1).message, message);
+  }
+});
+
+test('lists several models per provider and reads moves wrapped in Markdown', () => {
+  const models = availableModels({ OPENAI_API_KEY: 'key', OPENAI_MODEL: 'gpt-a, gpt-b,,gpt-a', ANTHROPIC_MODEL: 'no-key' });
+  assert.deepEqual(Object.keys(models).filter(id => models[id].mode === 'live'), ['openai:gpt-a', 'openai:gpt-b']);
+  assert.equal(parseMove('```json\n{"move": 4}\n```'), 4);
+  assert.equal(parseMove('I will play {"move":7}.'), 7);
+  assert.equal(parseMove('column three'), null);
 });
