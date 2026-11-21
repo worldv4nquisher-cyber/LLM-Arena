@@ -1,5 +1,8 @@
 import { fighters, styles, actionNames } from "./fight-engine.js";
 import { buildBroadcast, broadcastAt, roundCall } from "./fight-broadcast.js";
+import { ArenaAudio } from "./fight-audio.js";
+
+const venueAudio = new ArenaAudio();
 
 const $ = (id) => document.getElementById(id);
 const symbols = {
@@ -19,9 +22,7 @@ let scene,
   lastFrame,
   lastBeat = "",
   lastPhase = "",
-  finished = false,
-  sound = false,
-  audio;
+  finished = false;
 let lastCommentary = -Infinity;
 let savedMatches = [];
 try {
@@ -181,37 +182,21 @@ fighters.forEach((f) => {
   $("fighter-roster").append(card);
 });
 
-function tone(frequency = 220, duration = 0.1, type = "sine", volume = 0.04) {
-  if (!sound || !audio) return;
-  const osc = audio.createOscillator(),
-    gain = audio.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(frequency, audio.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(
-    frequency / 2,
-    audio.currentTime + duration,
-  );
-  gain.gain.setValueAtTime(volume, audio.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(audio.destination);
-  osc.start();
-  osc.stop(audio.currentTime + duration);
-}
 $("sound").addEventListener("click", async () => {
+  $("sound").disabled = true;
   try {
-    audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    await audio.resume();
-    sound = !sound;
+    const sound = await venueAudio.toggle();
     $("sound").setAttribute("aria-pressed", String(sound));
     $("sound").setAttribute(
       "aria-label",
       sound ? "关闭比赛音效" : "开启比赛音效",
     );
     $("sound").querySelector("span").textContent = sound ? "音效开" : "音效关";
-    tone(660, 0.2);
+    if (sound) venueAudio.bell();
   } catch {
     $("sound").querySelector("span").textContent = "音效不可用";
+  } finally {
+    $("sound").disabled = false;
   }
 });
 
@@ -339,7 +324,8 @@ function finish() {
     replay.winner === null
       ? "双方鏖战三轮，最终握手言和。"
       : `${config(replay.winner).title}拿下本场胜利！这是策略与时机的较量。`;
-  tone(880, 0.5, "triangle", 0.06);
+  venueAudio.victory();
+  scene.stage.react(1.8);
   const record = {
     players: replay.players,
     wins: replay.wins,
@@ -401,6 +387,7 @@ function frame(now) {
     scene.paused = Boolean(replay && !playing && !finished);
     document.querySelector(".broadcast").dataset.paused = String(scene.paused);
   }
+  venueAudio.setPaused(document.hidden || Boolean(replay && !playing && !finished));
   if (playing && replay && scene) {
     elapsed += dt * Number($("speed").value);
     const shot = broadcastAt(timeline, elapsed);
@@ -425,7 +412,7 @@ function frame(now) {
         $("clock").textContent = "45";
         $("round-label").textContent = "ROUND 01";
         $("feed-counter").textContent = "ENTRANCE";
-        tone(shot.player ? 660 : 440, 0.3, "triangle");
+        venueAudio.note(shot.player ? 660 : 440, 0.3, 0.04, "triangle");
       }
     } else {
       const { round } = shot;
@@ -454,7 +441,8 @@ function frame(now) {
           $("commentary").textContent = count === 3
             ? `第 ${round.round} 回合，开战！`
             : `第 ${round.round} 回合即将开始。当前比分 ${previousWins[0]} : ${previousWins[1]}，双方准备就绪。`;
-          tone(count === 3 ? 880 : 540, count === 3 ? 0.35 : 0.1, "triangle");
+          if (count === 3) venueAudio.bell();
+          else venueAudio.note(540, 0.1, 0.04, "triangle");
         }
       } else if (shot.type === "fight") {
         const { index, progress, beat } = shot;
@@ -498,13 +486,7 @@ function frame(now) {
             void el.offsetWidth;
             el.classList.add("pop");
           });
-          if (beat.events.some((e) => e.damage))
-            tone(
-              special ? 160 : 110,
-              special ? 0.35 : 0.09,
-              "triangle",
-              special ? 0.07 : 0.035,
-            );
+          venueAudio.exchange(beat.events);
         }
       } else if (shot.type === "outro") {
         scene.pose = null;
@@ -525,7 +507,8 @@ function frame(now) {
           $("broadcast-state").textContent = "回合结束";
           $("feed-counter").textContent = "ROUND COMPLETE";
           $("commentary").textContent = `${result}！当前比分 ${score}。${round === replay.rounds.at(-1) ? "胜负已定，等待最终赛果。" : "稍作调整，准备下一回合。"}`;
-          tone(330, 0.4, "triangle");
+          venueAudio.knockout();
+          scene.stage.react(1.8);
         }
       }
     }
@@ -560,6 +543,7 @@ try {
 }
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && playing) $("pause").click();
+  venueAudio.setPaused(document.hidden || Boolean(replay && !playing && !finished));
 });
 // Browser history may restore native select values after module initialization.
 // Synchronize all dependent visuals after that restoration, including BFCache.
