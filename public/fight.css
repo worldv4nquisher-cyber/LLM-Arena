@@ -526,7 +526,7 @@ h1 span {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 19px;
+  margin-bottom: 12px;
 }
 .panel-title h2 {
   font-size: 14px;
@@ -549,7 +549,7 @@ h1 span {
     10px ui-monospace,
     monospace;
   color: var(--fighter, #c3b0fc);
-  margin-bottom: 9px;
+  margin-bottom: 6px;
 }
 .config-label > span:last-child {
   margin-left: auto;
@@ -566,11 +566,50 @@ h1 span {
   --fighter: #c3b0fc;
 }
 .player-config label {
+  display: block;
+  color: #b6a7c7;
+  font-size: 10px;
+  margin: 4px 0;
+}
+.player-config label:first-of-type {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
+}
+.setup-help {
+  grid-column: 1/-1;
+  color: #b6a7c7;
+  font-size: 10px;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+#match-setup,
+#match-history,
+#broadcast {
+  scroll-margin-top: 16px;
+}
+.match-controls {
+  grid-column: 1/-1;
+}
+.match-actions {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 9px;
+}
+.match-actions .primary-button {
+  flex: 1;
+  margin: 0;
+  letter-spacing: 1px;
+}
+#edit-settings {
+  border: 1px solid #ffffff20;
+  background: #ffffff06;
+  color: #d0bedf;
+  border-radius: 5px;
+  padding: 8px;
+  font-size: 11px;
 }
 select {
   border: 1px solid #ffffff16;
@@ -585,7 +624,7 @@ select {
   display: block;
   width: 100%;
   font-size: 12px;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 .player-config select:first-of-type {
   color: #eee6f7;
@@ -634,17 +673,25 @@ select {
 }
 .playback {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 5px;
 }
 .playback button,
-.playback > label {
+.playback > label,
+.playback > a {
   background: #ffffff04;
   border: 1px solid #ffffff0d;
   border-radius: 4px;
   font-size: 9px;
   padding: 6px 8px;
   color: #b9acc9;
+}
+.playback > a {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-basis: 100%;
 }
 .playback > label {
   display: flex;
@@ -662,7 +709,7 @@ select {
   font-size: 9px;
   line-height: 1.8;
   color: #8f829e;
-  margin: 12px 0 17px;
+  margin: 10px 0 12px;
 }
 .feed-heading {
   display: flex;
@@ -686,7 +733,7 @@ select {
   list-style: none;
   padding: 0;
   margin: 8px 0 0;
-  height: 82px;
+  height: 65px;
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: #5e4d72 transparent;
@@ -827,6 +874,8 @@ select {
   font-size: 9px;
   color: #cab0e8;
   background: transparent;
+  min-height: 44px;
+  padding: 8px;
 }
 footer {
   max-width: 1680px;
@@ -954,13 +1003,53 @@ footer a {
   }
 }
 @media (max-width: 800px) {
+  body {
+    padding-bottom: calc(124px + env(safe-area-inset-bottom));
+  }
+  .match-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 9px 14px calc(9px + env(safe-area-inset-bottom));
+    background: #1c1926f7;
+    border-top: 1px solid #b494d34a;
+    box-shadow: 0 -6px 24px #0006;
+  }
+  .match-actions {
+    margin: 0 0 7px;
+  }
+  .match-actions button,
+  .playback button,
+  .playback > label,
+  .playback > a,
+  .player-config select {
+    min-height: 44px;
+  }
+  .playback button,
+  .playback > label,
+  .playback > a,
+  .playback select {
+    font-size: 12px;
+  }
+  .playback select {
+    min-height: 44px;
+  }
   .topbar {
-    height: 68px;
-    gap: 25px;
+    min-height: 68px;
+    height: auto;
+    gap: 0 25px;
+    flex-wrap: wrap;
+    padding-top: 12px;
   }
   .topbar nav {
     gap: 18px;
+    flex-wrap: wrap;
     font-size: 11px;
+  }
+  .topbar nav a {
+    min-height: 44px;
   }
   .season {
     display: none;
@@ -1034,8 +1123,17 @@ footer a {
     grid-column: 1/-1;
   }
   .playback {
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .playback > a {
+    display: flex;
+    flex-basis: auto;
+  }
+  .playback > * {
     justify-content: center;
-    gap: 10px;
+    min-width: 0;
   }
   .mode-note {
     text-align: center;
@@ -1085,6 +1183,15 @@ footer a {
   }
 }
 @media (max-width: 430px) {
+  .playback button,
+  .playback > a,
+  .playback > label {
+    font-size: 11px;
+    padding-inline: 6px;
+  }
+  .playback select {
+    font-size: 11px;
+  }
   .topbar {
     gap: 17px;
     padding: 0 14px;

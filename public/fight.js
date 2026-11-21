@@ -21,7 +21,8 @@ let scene,
   lastFrame,
   lastBeat = "",
   lastPhase = "",
-  finished = false;
+  finished = false,
+  loading = false;
 let combatCues = [];
 let savedMatches = [];
 try {
@@ -133,6 +134,7 @@ function resetSelection() {
   $("pause").disabled = true;
   $("broadcast-state").textContent = "赛前准备";
   $("pause").textContent = "Ⅱ 暂停";
+  $("start").textContent = "▶ 开始比赛";
   $("feed-counter").textContent = "READY";
   const emptyFeed = document.createElement("li");
   emptyFeed.className = "feed-empty";
@@ -228,12 +230,28 @@ function beginPlayback() {
   $("pause").textContent = "Ⅱ 暂停";
   $("replay").disabled = false;
   $("start").textContent = "↻ 重新开赛";
+  $("round-label").textContent = "ROUND 01";
+  $("clock").textContent = "45";
+  $("broadcast-state").textContent = "回合准备";
+  $("commentary").textContent =
+    `${config(0).name} 对阵 ${config(1).name}。比赛即将开始。`;
   lockSettings(true);
   updateStats();
 }
 
+function updateHistoryControls() {
+  document.querySelectorAll(".history-replay").forEach((button) => {
+    button.disabled = loading || !scene;
+  });
+}
+
 async function startMatch(seed) {
+  if (loading || !scene) return;
+  loading = true;
   $("start").disabled = true;
+  $("edit-settings").disabled = true;
+  $("replay").disabled = true;
+  updateHistoryControls();
   playing = false;
   $("pause").disabled = true;
   lockSettings(true);
@@ -260,12 +278,33 @@ async function startMatch(seed) {
     $("broadcast-state").textContent = "连接异常";
     $("commentary").textContent = "未生成比赛。请检查连接后重新开赛。";
   } finally {
+    loading = false;
     $("start").disabled = false;
+    $("edit-settings").disabled = false;
+    updateHistoryControls();
   }
 }
-$("start").addEventListener("click", () => startMatch());
+function watchMatch() {
+  if (window.matchMedia("(max-width: 800px)").matches)
+    $("broadcast").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("start").addEventListener("click", () => {
+  startMatch();
+  watchMatch();
+});
+$("edit-settings").addEventListener("click", () => {
+  if (loading) return;
+  playing = false;
+  lockSettings(false);
+  resetSelection();
+  $("match-setup").scrollIntoView({ behavior: "smooth", block: "start" });
+  players[0].focus({ preventScroll: true });
+});
 $("replay").addEventListener("click", () => {
-  if (replay) beginPlayback();
+  if (replay && !loading) {
+    beginPlayback();
+    watchMatch();
+  }
 });
 $("pause").addEventListener("click", () => {
   if (!replay || finished) return;
@@ -346,19 +385,25 @@ function renderHistory() {
     const button = document.createElement("button");
     button.className = "history-replay";
     button.textContent = "回看比赛 ↗";
+    button.setAttribute(
+      "aria-label",
+      `回看 ${names[0]} 对阵 ${names[1]}，${m.wins[0]} 比 ${m.wins[1]}`,
+    );
     button.addEventListener("click", () => {
-      if (playing) return;
+      if (loading || !scene) return;
+      playing = false;
       players.forEach((p, i) => {
         p.value = m.players[i];
         tactics[i].value = m.tactics[i];
       });
       resetSelection();
       startMatch(m.seed);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      $("broadcast").scrollIntoView({ behavior: "smooth", block: "start" });
     });
     row.append(name, score, button);
     $("history").append(row);
   });
+  updateHistoryControls();
 }
 function frame(now) {
   // Normal playback follows wall-clock time. Stalled renderers still show the
@@ -478,6 +523,7 @@ try {
   );
   $("loading-scene").remove();
   $("start").disabled = false;
+  updateHistoryControls();
   updateNames();
   $("scene").addEventListener("rendererror", () => {
     playing = false;
