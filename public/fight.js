@@ -122,7 +122,9 @@ function renderHistory() {
   });
 }
 function frame(now) {
-  const dt = Math.min(.1, (now - (lastFrame ?? now)) / 1000); lastFrame = now;
+  // Keep the match on wall-clock time even on slower renderers. Hidden tabs
+  // explicitly pause below, so no capped delta should silently slow playback.
+  const dt = Math.max(0, (now - (lastFrame ?? now)) / 1000); lastFrame = now;
   if (playing && replay && scene) {
     elapsed += dt * Number($('speed').value);
     let position = elapsed, active = false;

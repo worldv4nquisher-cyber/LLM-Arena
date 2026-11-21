@@ -15,6 +15,7 @@ test('fight replay is deterministic, bounded, and settles damage simultaneously'
       assert(round.beats.length > 0 && round.beats.length <= 45);
       let health = [100,100];
       for (const beat of round.beats) {
+        assert(beat.states[1].x - beat.states[0].x >= 2.2, 'keep collision space for attack animations');
         beat.states.forEach((state,i) => {
           assert.equal(state.hp, Math.max(0, health[i] - beat.events.filter(e => e.player !== i).reduce((sum,e) => sum + e.damage,0)));
           assert(state.energy >= 0 && state.energy <= 100);

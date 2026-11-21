@@ -47,7 +47,7 @@ export function simulateFight({ players, tactics, seed = 1 }) {
         if (actions[i] === 'advance') s.x += direction * .7;
         if (actions[i] === 'strike' || actions[i] === 'heavy') s.x += direction * Math.min(.5, Math.max(0, Math.abs(s.x - other.x) - 1.2));
         if (actions[i] === 'evade') s.x -= direction * .6;
-        s.x = Math.max(i ? .7 : -3.1, Math.min(i ? 3.1 : -.7, s.x));
+        s.x = Math.max(i ? 1.1 : -3.1, Math.min(i ? 3.1 : -1.1, s.x));
       }
       // Both choices are resolved simultaneously: neither side gets a turn-order advantage.
       const damages = [0, 0];

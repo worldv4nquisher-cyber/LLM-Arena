@@ -14,6 +14,41 @@ function line(p, points, color, width = .035) {
   const curve = new T.CatmullRomCurve3(points.map(v => new T.Vector3(...v)));
   return mesh(p, new T.TubeGeometry(curve, 20, width, 7, false), mat(color));
 }
+
+// Merge by material without flattening animated joints. A crowd of hundreds of
+// separate little meshes otherwise costs hundreds of draw calls per shadow pass.
+function batchMeshes(parent, recursive = false) {
+  if (recursive) [...parent.children].forEach(child => {
+    if (!child.userData.dynamic) batchMeshes(child, true);
+  });
+  const batches = new Map();
+  for (const child of parent.children) {
+    if (!child.isMesh || child.isInstancedMesh || child.children.length || child.userData.dynamic || child.material.map || child.material.transparent) continue;
+    const m = child.material;
+    const key = [m.type, m.color?.getHex(), m.emissive?.getHex(), m.emissiveIntensity, m.roughness, m.metalness, m.side, m.wireframe].join(':');
+    if (!batches.has(key)) batches.set(key, []);
+    batches.get(key).push(child);
+  }
+  for (const objects of batches.values()) {
+    if (objects.length < 2) continue;
+    const geometries = objects.map(object => {
+      object.updateMatrix();
+      return (object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone()).applyMatrix4(object.matrix);
+    });
+    const merged = new T.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv']) {
+      if (!geometries.every(g => g.getAttribute(name))) continue;
+      const data = new Float32Array(geometries.reduce((count, g) => count + g.getAttribute(name).array.length, 0));
+      let offset = 0;
+      for (const geometry of geometries) { data.set(geometry.getAttribute(name).array, offset); offset += geometry.getAttribute(name).array.length; }
+      merged.setAttribute(name, new T.BufferAttribute(data, geometries[0].getAttribute(name).itemSize));
+    }
+    const combined = mesh(parent, merged, objects[0].material);
+    combined.castShadow = objects.some(o => o.castShadow);
+    objects.forEach(object => { parent.remove(object); object.geometry.dispose(); });
+    geometries.forEach(g => g.dispose());
+  }
+}
 function faceTexture(color) {
   const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 256;
   const ctx = canvas.getContext('2d');
@@ -111,6 +146,7 @@ function makeFighter(config) {
   const shadow = mesh(root, new T.CircleGeometry(.64, 40), new T.MeshBasicMaterial({ color: '#261e48', transparent: true, opacity: .21, depthWrite: false }), 0, .015, 0); shadow.rotation.x = -Math.PI / 2;
   const base = ring(root, config.color, .64, .035, .018);
   const shield = ball(root, new T.MeshBasicMaterial({ color: config.color, transparent: true, opacity: .13, wireframe: true }), 0, 1.3, 0, .95, 1.4, .95); shield.visible = false;
+  batchMeshes(body, true);
   return { root, body, arms, legs, head, base, shield, config };
 }
 
@@ -119,14 +155,16 @@ export class FightScene {
     this.container = container; this.cameraMode = 'broadcast'; this.particles = []; this.time = 0; this.lastImpact = '';
     this.scene = new T.Scene(); this.scene.fog = new T.Fog('#be90b9', 23, 65);
     this.camera = new T.PerspectiveCamera(39, 1, .1, 120);
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+    this.renderer = new T.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
+    const gl = this.renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
+    this.software = /swiftshader|llvmpipe|software/i.test(debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : '');
+    this.renderer.setPixelRatio(this.software ? .8 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !this.software; this.renderer.shadowMap.type = T.PCFSoftShadowMap;
     this.renderer.outputColorSpace = T.SRGBColorSpace; this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.25;
     container.append(this.renderer.domElement); this.renderer.domElement.setAttribute('aria-label', '3D 星穹擂台，双方 AI 拟人选手在场内对战');
     this.scene.add(new T.HemisphereLight('#dfdeff', '#735369', 2.6));
-    const sun = new T.DirectionalLight('#ffddbd', 4); sun.position.set(-6, 12, 6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9 }); sun.shadow.normalBias = .035; this.scene.add(sun);
+    const sun = new T.DirectionalLight('#ffddbd', 4); sun.position.set(-6, 12, 6); sun.castShadow = !this.software; sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9 }); sun.shadow.normalBias = .035; this.scene.add(sun);
     const rim = new T.DirectionalLight('#aaa6ff', 3); rim.position.set(5, 6, -5); this.scene.add(rim);
-    this.buildWorld(); this.setFighters(configs);
+    this.buildWorld(); batchMeshes(this.scene, true); this.setFighters(configs);
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container); this.resize();
     this.animate = this.animate.bind(this); this.animation = requestAnimationFrame(this.animate);
     this.renderer.domElement.addEventListener('webglcontextlost', event => { event.preventDefault(); container.dispatchEvent(new CustomEvent('rendererror')); });
@@ -184,14 +222,14 @@ export class FightScene {
     // Camera drones, lanterns, stars and drifting petals animate with the world clock.
     this.drones = [];
     for (const side of [-1,1]) {
-      const drone = new T.Group(); drone.position.set(side * 5.3, 5.5, -3); s.add(drone);
+      const drone = new T.Group(); drone.userData.dynamic = true; drone.position.set(side * 5.3, 5.5, -3); s.add(drone);
       ball(drone, mat('#4c516f', { metalness: .6 }), 0,0,0,.32,.18,.22); ball(drone, glow('#98e9ff'),0,0,.2,.1);
       for (const dx of [-.48,.48]) { const rotor=mesh(drone,new T.TorusGeometry(.27,.022,6,30),glow('#bdb1ff'),dx,.12,0); rotor.rotation.x=Math.PI/2; box(drone,edge,dx*.6,0,0,.4,.04,.05); }
       this.drones.push(drone);
     }
     this.petals = [];
     const petalGeo = new T.SphereGeometry(1, 5, 3), petalMat = mat('#ffd2e4', { side: T.DoubleSide });
-    for (let i=0;i<45;i++) { const p=mesh(s,petalGeo,petalMat,Math.sin(i*17)*11,1+(i%11)*.6,Math.cos(i*31)*9); p.scale.set(.055,.012,.035); this.petals.push(p); }
+    for (let i=0;i<(this.software?18:36);i++) { const p=mesh(s,petalGeo,petalMat,Math.sin(i*17)*11,1+(i%11)*.6,Math.cos(i*31)*9); p.userData.dynamic=true; p.scale.set(.055,.012,.035); this.petals.push(p); }
   }
   tree(x,z) {
     const group=new T.Group(); group.position.set(x,0,z); this.scene.add(group);
@@ -227,7 +265,7 @@ export class FightScene {
       const x=pose?T.MathUtils.lerp(pose.previous[i].x,pose.beat.states[i].x,Math.min(1,p*2)):i?2.1:-2.1;
       const attack=['strike','heavy','ultimate','blast'].includes(action);
       const hit=pose?.beat.events.some(e=>e.player!==i&&e.damage>0);
-      f.root.position.x=x+(attack?(i?-.27:.27)*pulse:action==='evade'?(i?.25:-.25)*pulse:0);
+      f.root.position.x=x+(attack?(i?-.16:.16)*pulse:action==='evade'?(i?.25:-.25)*pulse:0);
       f.root.position.y=.07+(action==='evade'?.45*pulse:Math.sin(t*3+i)*.025);
       f.root.position.z=action==='evade'?.55*pulse:0;
       f.root.rotation.y=(i?-1:1)*.63;
@@ -253,7 +291,7 @@ export class FightScene {
     const wide=this.camera.aspect<1.25;
     if(this.cameraMode==='overhead') this.camera.position.set(0,13,8);
     else if(this.cameraMode==='ringside') this.camera.position.set(0,3.5,wide?15:11.5);
-    else this.camera.position.set(Math.sin(t*.035)*1.7,wide?7.5:6,wide?19:14.5);
+    else this.camera.position.set(Math.sin(t*.035)*1.7,wide?7.5:4.8,wide?19:12.8);
     if(this.shake>0){this.camera.position.x+=(Math.random()-.5)*this.shake;this.shake*=.85;}
     this.camera.lookAt(0,this.cameraMode==='overhead'?0:.9,0);
     this.renderer.render(this.scene,this.camera); this.animation=requestAnimationFrame(this.animate);
