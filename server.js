@@ -15,6 +15,7 @@ const assets = new Map([
   ['/fight-scene.js', ['fight-scene.js', 'text/javascript; charset=utf-8']],
   ['/fight-stage.js', ['fight-stage.js', 'text/javascript; charset=utf-8']],
   ['/fight-audio.js', ['fight-audio.js', 'text/javascript; charset=utf-8']],
+  ['/fight-models.js', ['fight-models.js', 'text/javascript; charset=utf-8']],
   ['/fight-engine.js', ['fight-engine.js', 'text/javascript; charset=utf-8']],
   ['/vendor/three.module.js', ['../node_modules/three/build/three.module.js', 'text/javascript; charset=utf-8']],
   ['/arena.css', ['arena.css', 'text/css; charset=utf-8']],
