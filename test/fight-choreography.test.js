@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CONTACT, combatPositions, motion, reaction, sidestep } from "../public/fight-choreography.js";
+import { CONTACT, combatPositions, motion, reaction, sidestep, playbackCues, advancePlayback } from "../public/fight-choreography.js";
 import { simulateFight } from "../public/fight-engine.js";
 
 test("melee closes the visual gap at contact without crossing either fighter", () => {
@@ -55,4 +55,19 @@ test("a failed sidestep is caught in the attack lane, not shown as a successful 
   assert.equal(sidestep(beat, 1, CONTACT), 0, "the hit and target share the attack lane");
   const escaped = { ...beat, events: [{ ...beat.events[0], damage: 0, outcome: "evade" }] };
   assert.equal(sidestep(escaped, 1, CONTACT), 1, "successful dodge clears the projectile");
+});
+
+test("stalled rendering cannot skip deciding contact and collapse cues", () => {
+  const replay = simulateFight({ players: ["gpt", "claude"], seed: 2777097442 });
+  const cues = playbackCues(replay);
+  let elapsed = 0;
+  const seen = [];
+  while (elapsed < cues.at(-1)) {
+    elapsed = advancePlayback(elapsed, 2, cues);
+    seen.push(elapsed);
+  }
+  assert(cues.every((cue) => seen.includes(cue)), "even two-second stalls must render every protected pose");
+  let normal = 0;
+  for (let frame = 0; frame < 600; frame++) normal = advancePlayback(normal, 1 / 60, cues);
+  assert(Math.abs(normal - 10) < 1e-9, "normal rendering preserves 1x wall-clock playback");
 });

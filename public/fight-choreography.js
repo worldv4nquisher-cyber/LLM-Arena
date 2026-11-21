@@ -1,6 +1,30 @@
 // One contact cue drives the rig, projectiles, HUD, sound and impact effects.
 export const CONTACT = 0.48;
 export const RELEASE = 0.22;
+export const ROUND_INTRO = 2.2;
+export const ROUND_OUTRO = 1.9;
+
+export function playbackCues(replay) {
+  let start = 0;
+  const cues = [];
+  for (const round of replay.rounds) {
+    for (let i = 0; i < round.beats.length; i++) {
+      // Contact, recoil, and settled follow-through must each reach the renderer.
+      for (const phase of [CONTACT + 0.002, 0.68, 0.98])
+        cues.push(start + ROUND_INTRO + (i + phase) * replay.beatDuration);
+    }
+    start += ROUND_INTRO + round.beats.length * replay.beatDuration + ROUND_OUTRO;
+  }
+  return cues;
+}
+
+export function advancePlayback(elapsed, delta, cues) {
+  const target = elapsed + delta;
+  const cue = cues.find((time) => time > elapsed + 1e-7);
+  // Ordinary frames retain wall-clock speed. After a render stall, prefer showing
+  // the next combat cue to jumping straight from anticipation to a result card.
+  return cue !== undefined && target > cue + 0.06 ? cue : target;
+}
 export const clamp = (n) => Math.max(0, Math.min(1, n));
 export const ease = (n) => {
   const p = clamp(n);

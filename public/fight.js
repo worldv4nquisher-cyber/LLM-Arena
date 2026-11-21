@@ -1,5 +1,5 @@
 import { fighters, styles, actionNames } from "./fight-engine.js";
-import { CONTACT } from "./fight-choreography.js";
+import { CONTACT, ROUND_INTRO, ROUND_OUTRO, playbackCues, advancePlayback } from "./fight-choreography.js";
 
 const $ = (id) => document.getElementById(id);
 const symbols = {
@@ -21,6 +21,7 @@ let scene,
   finished = false,
   sound = false,
   audio;
+let combatCues = [];
 let savedMatches = [];
 try {
   const saved = JSON.parse(localStorage.getItem("celestial-matches") ?? "[]");
@@ -228,6 +229,7 @@ function lockSettings(locked) {
   });
 }
 function beginPlayback() {
+  combatCues = playbackCues(replay);
   elapsed = 0;
   lastBeat = "";
   lastPhase = "";
@@ -373,18 +375,18 @@ function renderHistory() {
   });
 }
 function frame(now) {
-  // Keep the match on wall-clock time even on slower renderers. Hidden tabs
-  // explicitly pause below, so no capped delta should silently slow playback.
+  // Normal playback follows wall-clock time. Stalled renderers still show the
+  // decisive contact and follow-through instead of skipping entire exchanges.
   const dt = Math.max(0, (now - (lastFrame ?? now)) / 1000);
   lastFrame = now;
   if (playing && replay && scene) {
-    elapsed += dt * Number($("speed").value);
+    elapsed = advancePlayback(elapsed, dt * Number($("speed").value), combatCues);
     let position = elapsed,
       active = false;
     for (const round of replay.rounds) {
-      const intro = 2.2,
+      const intro = ROUND_INTRO,
         duration = round.beats.length * replay.beatDuration,
-        outro = 1.9;
+        outro = ROUND_OUTRO;
       const roundDuration = intro + duration + outro;
       if (position >= roundDuration) {
         position -= roundDuration;
