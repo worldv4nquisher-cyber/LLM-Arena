@@ -49,7 +49,7 @@ const providers = [
 export function availableModels(env) {
   const models = Object.fromEntries(Object.entries(demoModels).map(([id, model]) => [id, { ...model, mode: 'demo' }]));
   const seconds = Number(env.MODEL_TIMEOUT_SECONDS);
-  const timeout = (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000;
+  const timeout = Math.round((Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000);
   for (const [provider, description, keyName, modelName] of providers) {
     const key = env[keyName]?.trim();
     const names = [...new Set((env[modelName] ?? '').split(',').map(name => name.trim()).filter(Boolean))];
