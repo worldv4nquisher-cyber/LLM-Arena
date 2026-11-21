@@ -18,8 +18,10 @@ export function playbackCues(replay) {
   return cues;
 }
 
-export function advancePlayback(elapsed, delta, cues) {
+export function advancePlayback(elapsed, delta, cues, frameDelta = delta) {
   const target = elapsed + delta;
+  // Playback speed is not render latency: 2x at a steady 24 FPS is not a stall.
+  if (frameDelta <= 0.1) return target;
   const cue = cues.find((time) => time > elapsed + 1e-7);
   // Ordinary frames retain wall-clock speed. After a render stall, prefer showing
   // the next combat cue to jumping straight from anticipation to a result card.

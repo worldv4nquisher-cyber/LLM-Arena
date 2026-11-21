@@ -70,4 +70,10 @@ test("stalled rendering cannot skip deciding contact and collapse cues", () => {
   let normal = 0;
   for (let frame = 0; frame < 600; frame++) normal = advancePlayback(normal, 1 / 60, cues);
   assert(Math.abs(normal - 10) < 1e-9, "normal rendering preserves 1x wall-clock playback");
+  for (const speed of [0.5, 1, 2]) {
+    let steady = 0;
+    for (let frame = 0; frame < 240; frame++)
+      steady = advancePlayback(steady, speed / 24, cues, 1 / 24);
+    assert(Math.abs(steady - 10 * speed) < 1e-9, "24 FPS must preserve selected speed");
+  }
 });

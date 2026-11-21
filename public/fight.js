@@ -380,7 +380,7 @@ function frame(now) {
   const dt = Math.max(0, (now - (lastFrame ?? now)) / 1000);
   lastFrame = now;
   if (playing && replay && scene) {
-    elapsed = advancePlayback(elapsed, dt * Number($("speed").value), combatCues);
+    elapsed = advancePlayback(elapsed, dt * Number($("speed").value), combatCues, dt);
     let position = elapsed,
       active = false;
     for (const round of replay.rounds) {
