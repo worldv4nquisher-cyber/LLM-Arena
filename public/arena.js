@@ -23,17 +23,20 @@ let gameId = 'tic-tac-toe';
 let board;
 let cells;
 let controller;
-let history = [];
+let history = readHistory();
 
-try {
-  const saved = JSON.parse(localStorage.getItem(historyKey));
-  if (Array.isArray(saved)) {
-    history = saved.filter(entry => Object.hasOwn(names, entry?.game) &&
-      Array.isArray(entry.players) && entry.players.length === 2 &&
-      entry.players.every(name => typeof name === 'string') &&
-      [0, 1, 2].includes(entry.winner) && Number.isInteger(entry.turns)).slice(0, 20);
-  }
-} catch { /* The arena still works without browser storage. */ }
+function readHistory(fallback = []) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(historyKey));
+    if (Array.isArray(saved)) {
+      return saved.filter(entry => Object.hasOwn(names, entry?.game) &&
+        Array.isArray(entry.players) && entry.players.length === 2 &&
+        entry.players.every(name => typeof name === 'string') &&
+        [0, 1, 2].includes(entry.winner) && Number.isInteger(entry.turns)).slice(0, 20);
+    }
+    return [];
+  } catch { return fallback; }
+}
 
 function status(label, state = 'idle') {
   ui('status').textContent = label;
@@ -184,6 +187,7 @@ async function startMatch() {
           const winner = event.winner === 0 ? '平局' : `${event.winner === 1 ? '红方' : '蓝方'}获胜`;
           status(forfeit ? `${winner} · 对手落子无效` : winner, 'result');
           event.line?.forEach(([row, col]) => cells[row][col].classList.add('win'));
+          history = readHistory(history);
           history.unshift({
             game: gameId, players: players.map(model => model.name), winner: event.winner, turns,
             live: players.some(model => model.mode === 'live'), forfeit,
@@ -224,6 +228,11 @@ selectors.forEach(select => select.addEventListener('change', () => {
 }));
 start.addEventListener('click', startMatch);
 stop.addEventListener('click', () => controller?.abort());
+window.addEventListener('storage', event => {
+  if (event.key !== historyKey || event.storageArea !== localStorage) return;
+  history = readHistory();
+  showHistory();
+});
 resetMatch();
 showHistory();
 
