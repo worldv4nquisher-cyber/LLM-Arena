@@ -40,15 +40,15 @@ function json(res, status, value) {
 async function matchInput(req) {
   const chunks = [];
   let length = 0;
-  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
-    length += chunk.length;
-    if (length > 2048) {
-      req.resume();
-      return null;
-    }
-    chunks.push(chunk);
-  }
   try {
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+      length += chunk.length;
+      if (length > 2048) {
+        req.resume();
+        return null;
+      }
+      chunks.push(chunk);
+    }
     return JSON.parse(Buffer.concat(chunks).toString());
   } catch {
     return null;
