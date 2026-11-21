@@ -37,7 +37,7 @@ async function matchInput(req) {
   }
 }
 
-export function createArena({ env = process.env, turnDelay = 430, request = fetch } = {}) {
+export function createArena({ env = process.env, turnDelay, request = fetch } = {}) {
   const models = availableModels(env);
   let liveInProgress = false;
 
@@ -80,6 +80,7 @@ export function createArena({ env = process.env, turnDelay = 430, request = fetc
       return json(res, 400, { error: '请选择有效的游戏和两位选手。' });
     }
     const isLive = input.players.some(id => models[id].mode === 'live');
+    const playbackDelay = turnDelay ?? (isLive ? 430 : 1000);
     if (isLive && liveInProgress) return json(res, 429, { error: '已有真实模型对局进行中，请稍后再试。' });
     if (isLive) liveInProgress = true;
 
@@ -99,7 +100,7 @@ export function createArena({ env = process.env, turnDelay = 430, request = fetc
         send({ type: 'turn', player });
         const move = model.mode === 'demo' ? demoMove(id, game, board, player) :
           await liveMove(id, model, game, board, player, signal, request);
-        await delay(turnDelay, undefined, { signal });
+        await delay(playbackDelay, undefined, { signal });
         if (!legalMoves(game, board).includes(move)) {
           send({ type: 'result', winner: 3 - player, reason: 'illegal-move' });
           break;

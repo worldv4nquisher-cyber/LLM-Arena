@@ -51,13 +51,16 @@ nav a:hover, nav .nav-primary { color: var(--text); border-color: var(--accent);
 .eyebrow span { width: 15px; height: 2px; background: var(--accent); }
 .hero h1 { margin: 12px 0 11px; font-size: clamp(2.4rem, 5.4vw, 4.6rem); font-weight: 850; line-height: 1.12; letter-spacing: -.07em; }
 .hero h1 span { color: var(--accent); }
-.hero-detail { color: var(--text-muted); margin: 0; max-width: 34ch; font-size: 1rem; }
+.hero-detail { color: var(--text-muted); margin: 0; max-width: 29em; font-size: 1rem; }
+.hero-detail + .hero-detail { margin-top: 5px; }
 .hero-index { display: flex; align-items: center; gap: 8px; align-self: start; color: var(--accent); white-space: nowrap; font: .65rem var(--mono); letter-spacing: .09em; }
 .hero-index b { font-size: .8rem; border: 1px solid currentColor; border-radius: 3px; padding: 3px 5px; }
 
 section[id] { scroll-margin-top: 22px; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 14px; }
 .section-heading h2 { font-size: clamp(1.45rem, 3vw, 1.8rem); line-height: 1.2; margin: 5px 0 0; letter-spacing: -.04em; }
+.match-heading, .match-actions { flex-wrap: wrap; }
+.match-actions { display: flex; gap: 8px; align-items: center; }
 .game-picker { display: inline-flex; gap: 3px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .game-option { display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--text-muted); white-space: nowrap; padding: 6px 13px; font-size: .88rem; }
 .game-option svg { width: 16px; height: 16px; }
@@ -71,6 +74,7 @@ section[id] { scroll-margin-top: 22px; }
 .panel-title svg { width: 16px; height: 16px; color: var(--accent); }
 .badge { padding: 4px 9px; border: 1px solid var(--border); background: var(--subtle); border-radius: 5px; color: var(--text-muted); font-size: .78rem; overflow-wrap: anywhere; }
 .badge[data-state="active"] { color: var(--accent); }
+.badge[data-state="active"][data-player="2"] { color: var(--blue); }
 .badge[data-state="result"] { color: var(--green); }
 .badge[data-state="error"] { color: var(--accent); }
 
@@ -93,7 +97,7 @@ section[id] { scroll-margin-top: 22px; }
 .cell { --piece: var(--accent); display: grid; place-items: center; aspect-ratio: 1; min-width: 0; color: var(--piece); background: var(--subtle); border: 1px solid var(--border); border-radius: 4px; }
 .cell[data-player="2"] { --piece: var(--blue); }
 .cell[data-player="1"], .cell[data-player="2"] { background: color-mix(in srgb, var(--piece) 12%, var(--subtle)); }
-.cell.last { border-color: color-mix(in srgb, var(--piece) 65%, var(--border)); }
+.cell.last { outline: 2px solid var(--piece); outline-offset: -2px; }
 .cell.win { border-color: var(--piece); background: color-mix(in srgb, var(--piece) 25%, var(--subtle)); }
 .cell .mark { display: block; position: relative; width: 54%; aspect-ratio: 1; }
 .cell[data-player="1"] .mark::before, .cell[data-player="1"] .mark::after { content: ""; position: absolute; inset: calc(50% - 2px) 1px auto; height: 4px; border-radius: 2px; background: currentColor; transform: rotate(45deg); }
@@ -103,8 +107,8 @@ section[id] { scroll-margin-top: 22px; }
 .gravity .cell .mark { width: 66%; border: 0; border-radius: 50%; background: currentColor; }
 .gravity .cell .mark::before, .gravity .cell .mark::after { content: none; }
 
-.arena-foot { display: flex; align-items: center; justify-content: end; padding: 12px 18px; gap: 9px; border-top: 1px solid var(--border); }
-.arena-foot p { color: var(--text-muted); margin: 0 auto 0 0; font-size: .78rem; }
+.arena-foot { padding: 12px 18px; border-top: 1px solid var(--border); }
+.arena-foot p { color: var(--text-muted); margin: 0; font-size: .78rem; }
 .button-primary, .button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 7px; padding: 8px 14px; min-height: 40px; font-size: .86rem; font-weight: 700; white-space: nowrap; }
 .button-primary { color: var(--primary-action-fg); background: var(--primary-action); }
 .button-primary:not(:disabled):hover { background: color-mix(in srgb, white 14%, var(--primary-action)); }
