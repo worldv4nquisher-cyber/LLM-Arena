@@ -1,4 +1,5 @@
 import { fighters, styles, actionNames } from "./fight-engine.js";
+import { CONTACT } from "./fight-choreography.js";
 
 const $ = (id) => document.getElementById(id);
 const symbols = {
@@ -233,8 +234,7 @@ function beginPlayback() {
   finished = false;
   playing = true;
   lastFrame = undefined;
-  scene.lastImpact = "";
-  scene.pose = null;
+  scene.resetPose();
   $("battle-feed").replaceChildren();
   $("feed-counter").textContent = "LIVE";
   $("pause").disabled = false;
@@ -300,6 +300,7 @@ function feed(text, round, tick) {
 function finish() {
   finished = true;
   playing = false;
+  scene.setResult(replay.rounds.at(-1).beats.at(-1).states, replay.winner);
   lockSettings(false);
   $("pause").disabled = true;
   $("broadcast-state").textContent = "比赛结束";
@@ -395,7 +396,7 @@ function frame(now) {
       if (position < intro) {
         if (lastPhase !== `intro${round.round}`) {
           lastPhase = `intro${round.round}`;
-          scene.pose = null;
+          scene.resetPose();
           updateStats(
             undefined,
             round.round > 1 ? replay.rounds[round.round - 2].wins : [0, 0],
@@ -424,7 +425,7 @@ function frame(now) {
         $("center-announcement").classList.add("hidden");
         $("broadcast-state").textContent = "比赛进行中";
         $("clock").textContent = Math.max(0, 45 - index);
-        if (lastBeat !== key && progress > 0.37) {
+        if (lastBeat !== key && progress >= CONTACT) {
           lastBeat = key;
           updateStats(
             beat.states,
@@ -461,7 +462,7 @@ function frame(now) {
         }
       } else if (lastPhase !== `outro${round.round}`) {
         lastPhase = `outro${round.round}`;
-        scene.pose = null;
+        scene.setResult(round.beats.at(-1).states, round.winner);
         updateStats(round.beats.at(-1).states, round.wins);
         announce(
           round.winner === null

@@ -1,4 +1,5 @@
 import * as T from "/vendor/three.module.js";
+import { CONTACT, RELEASE, ease, motion, reaction, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
 
 const mat = (color, extra = {}) =>
   new T.MeshStandardMaterial({ color, roughness: 0.73, ...extra });
@@ -443,8 +444,9 @@ function makeFighter(config) {
     new T.MeshBasicMaterial({
       color: config.color,
       transparent: true,
-      opacity: 0.13,
+      opacity: 0.3,
       wireframe: true,
+      depthWrite: false,
     }),
     0,
     1.3,
@@ -813,28 +815,57 @@ export class FightScene {
       f.root.position.set(i ? 2 : -2, 0.07, 0);
     });
     this.pose = null;
+    this.result = null;
+    this.clearEffects();
+  }
+  clearEffects() {
+    this.projectiles?.forEach((orb) => { if (orb) orb.visible = false; });
+    this.particles.forEach((p) => {
+      this.scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+    });
+    this.particles = [];
+    this.shake = 0;
+    this.lastImpact = "";
+  }
+  resetPose() {
+    this.pose = null;
+    this.result = null;
+    this.clearEffects();
+  }
+  setResult(states, winner) {
+    this.pose = null;
+    this.result = { states, winner };
   }
   setPose(previous, beat, progress, key) {
+    this.result = null;
     this.pose = { previous, beat, progress };
-    if (key !== this.lastImpact && progress > 0.36) {
+    if (key !== this.lastImpact && progress >= CONTACT) {
       this.lastImpact = key;
+      const positions = combatPositions(previous, beat, CONTACT);
       for (const event of beat.events)
         if (event.damage > 0)
-          this.impact(
-            1 - event.player,
-            event.action === "ultimate" ? 36 : 14,
-            event.action === "ultimate",
-          );
+          this.impact(event, positions[1 - event.player]);
     }
   }
-  impact(side, count, ultimate) {
+  impact(event, x) {
+    const side = 1 - event.player;
     const target = this.fighters[side];
+    const ultimate = event.action === "ultimate";
+    const blocked = event.outcome === "block";
+    const count = blocked ? 9 : ultimate ? 30 : event.action === "heavy" ? 20 : 12;
+    const color = blocked ? "#a6efff" : "#ffe9ac";
+    x += side ? -0.45 : 0.45;
+    const flash = mesh(this.scene, new T.TorusGeometry(0.19, 0.045, 6, 24),
+      new T.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false }), x, 1.5, 0.4);
+    this.particles.push({ mesh: flash, life: 0, velocity: new T.Vector3(), flash: true });
     for (let i = 0; i < count; i++) {
       const p = ball(
         this.scene,
-        glow(target.config.color),
-        target.root.position.x,
-        1.4,
+        glow(i % 3 ? color : target.config.color),
+        x,
+        1.5,
         0.3,
         0.03 + Math.random() * 0.04,
       );
@@ -849,7 +880,8 @@ export class FightScene {
         ultimate,
       });
     }
-    this.shake = ultimate ? 0.14 : 0.045;
+    // Blocks get a small tap; clean heavy blows get the stronger camera cue.
+    this.shake = Math.max(this.shake || 0, blocked ? 0.025 : ultimate ? 0.23 : event.action === "heavy" ? 0.13 : 0.065);
   }
   resize() {
     const w = this.container.clientWidth,
@@ -865,56 +897,51 @@ export class FightScene {
     this.time += dt;
     const t = this.time,
       pose = this.pose;
+    const positions = pose ? combatPositions(pose.previous, pose.beat, pose.progress) : null;
     this.fighters.forEach((f, i) => {
       const action = pose?.beat.actions[i] ?? "idle",
         p = pose?.progress ?? 0;
-      const pulse = Math.sin(Math.min(1, p) * Math.PI);
-      const x = pose
-        ? T.MathUtils.lerp(
-            pose.previous[i].x,
-            pose.beat.states[i].x,
-            Math.min(1, p * 2),
-          )
-        : i
-          ? 2.1
-          : -2.1;
-      const attack = ["strike", "heavy", "ultimate", "blast"].includes(action);
-      const hit = pose?.beat.events.some((e) => e.player !== i && e.damage > 0);
-      f.root.position.x =
-        x +
-        (attack
-          ? (i ? -0.16 : 0.16) * pulse
-          : action === "evade"
-            ? (i ? 0.25 : -0.25) * pulse
-            : 0);
-      f.root.position.y =
-        0.07 +
-        (action === "evade" ? 0.45 * pulse : Math.sin(t * 3 + i) * 0.025);
-      f.root.position.z = action === "evade" ? 0.55 * pulse : 0;
-      f.root.rotation.y = (i ? -1 : 1) * 0.63;
-      f.body.rotation.z = hit
-        ? (i ? 0.12 : -0.12) * pulse
-        : attack
-          ? (i ? 0.12 : -0.12) * pulse
-          : Math.sin(t * 2) * 0.015;
-      f.body.rotation.x = action === "guard" ? -0.1 * pulse : 0;
+      const direction = i ? -1 : 1;
+      const { extension, windup } = motion(action, p);
+      const { recoil, blocked, down: falling } = pose
+        ? reaction(pose.beat, i, p)
+        : { recoil: 0, blocked: false, down: 0 };
+      const down = this.result?.states[i].hp === 0 ? 1 : falling;
+      const victory = this.result?.winner === i && !down;
+      const evade = action === "evade"
+        ? ease(p / 0.3) * (1 - ease((p - 0.62) / 0.38)) : 0;
+      const melee = isMelee(action), ranged = isRanged(action);
+      const attack = melee || ranged;
+      const x = positions?.[i] ?? this.result?.states[i].x ?? (i ? 2.1 : -2.1);
+      f.root.position.set(x - direction * (recoil * (blocked ? 0.06 : 0.18) + down * 0.3),
+        0.07, -evade * 0.95);
+      // Keep floor rings grounded: only the jointed body crouches, recoils or falls.
+      f.root.rotation.y = direction * 0.98 * (1 - down) * (victory ? 0.25 : 1);
+      f.body.position.y = down * 0.15 - evade * 0.2 + (victory ? 0.04 + Math.sin(t * 4) * 0.025 : 0);
+      f.body.rotation.set(
+        evade * 0.32 + (action === "guard" ? 0.12 : 0),
+        attack ? -direction * windup * 0.38 : 0,
+        direction * (-extension * 0.12 + windup * 0.15 + recoil * (blocked ? 0.1 : 0.34) + down * 1.34 - evade * 0.24),
+      );
       f.arms.forEach((a, j) => {
-        a.rotation.x = attack
-          ? -0.4 - pulse * (j === i ? 1.6 : 0.5)
-          : action === "guard"
-            ? -1.1
-            : Math.sin(t * 2 + j) * 0.07 - 0.12;
-        a.rotation.z =
-          (j ? 1 : -1) * (0.15 + (action === "ultimate" ? 0.6 * pulse : 0));
+        const lead = j === (i ? 0 : 1);
+        a.position.z = melee && lead ? extension * 0.13 : 0;
+        a.rotation.x = down ? -0.25 : victory ? (j === i ? -2.8 : -0.7)
+          : action === "guard" ? -1.35 - recoil * 0.15
+          : attack ? -0.35 + windup * (action === "heavy" ? 0.9 : 0.3) - extension * (lead || ranged ? 1.18 : 0.4)
+          : -0.4 - evade * 0.65 + Math.sin(t * 2 + j) * 0.05;
+        a.rotation.z = (j ? 1 : -1) * (down ? 0.6 : victory ? 0.45 : action === "guard" ? -0.22 : 0.15 + (action === "ultimate" ? windup * 0.7 : 0));
       });
       f.legs.forEach((l, j) => {
-        l.rotation.x =
-          action === "advance"
-            ? Math.sin(p * Math.PI * 2 + j * Math.PI) * 0.4
-            : 0;
+        l.rotation.x = down ? (j ? 0.3 : -0.25) : evade ? (j ? -0.65 : 0.65) * evade
+          : action === "advance" ? Math.sin(p * Math.PI * 2 + j * Math.PI) * 0.4
+          : melee ? (j ? -0.25 : 0.3) * extension : 0;
       });
-      f.head.rotation.z = Math.sin(t * 1.2 + i) * 0.025;
-      f.shield.visible = action === "guard";
+      f.head.rotation.z = down ? direction * 0.18 : direction * recoil * 0.12 + Math.sin(t * 1.2 + i) * 0.025;
+      f.head.rotation.x = down ? 0.15 : evade * 0.18;
+      f.shield.visible = action === "guard" && !down;
+      f.shield.material.opacity = 0.22 + recoil * 0.28;
+      f.shield.scale.set(0.83 + recoil * 0.1, 1.28, 0.83 + recoil * 0.1);
       f.shield.rotation.y = t * 0.4;
       f.base.material.emissiveIntensity = 1 + Math.sin(t * 2) * 0.5;
     });
@@ -923,7 +950,7 @@ export class FightScene {
         const action = pose.beat.actions[i],
           p = pose.progress;
         if (!this.projectiles) this.projectiles = [null, null];
-        if (["blast", "ultimate"].includes(action) && p > 0.12 && p < 0.65) {
+        if (isRanged(action) && p > RELEASE && p < CONTACT) {
           if (!this.projectiles[i]) {
             this.projectiles[i] = ball(
               this.scene,
@@ -936,11 +963,11 @@ export class FightScene {
           }
           const orb = this.projectiles[i];
           orb.visible = true;
-          orb.position.x = T.MathUtils.lerp(
-            this.fighters[i].root.position.x,
-            this.fighters[1 - i].root.position.x,
-            Math.min(1, (p - 0.12) / 0.5),
-          );
+          const travel = (p - RELEASE) / (CONTACT - RELEASE);
+          orb.position.set(T.MathUtils.lerp(
+            this.fighters[i].root.position.x + (i ? -0.5 : 0.5),
+            this.fighters[1 - i].root.position.x + (i ? 0.4 : -0.4), travel),
+            1.5, this.fighters[i].root.position.z);
           orb.scale.setScalar(action === "ultimate" ? 0.45 : 0.22);
         } else if (this.projectiles[i]) this.projectiles[i].visible = false;
       }
@@ -952,8 +979,11 @@ export class FightScene {
       p.life += dt;
       p.mesh.position.addScaledVector(p.velocity, dt);
       p.velocity.y -= dt * 4;
-      p.mesh.scale.multiplyScalar(0.96);
-      if (p.life > 0.65) {
+      if (p.flash) {
+        p.mesh.scale.setScalar(1 + p.life * 6);
+        p.mesh.material.opacity = Math.max(0, 1 - p.life / 0.22);
+      } else p.mesh.scale.multiplyScalar(Math.exp(-dt * 7));
+      if (p.life > (p.flash ? 0.22 : 0.5)) {
         this.scene.remove(p.mesh);
         p.mesh.geometry.dispose();
         p.mesh.material.dispose();
@@ -984,7 +1014,8 @@ export class FightScene {
       );
     if (this.shake > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.shake;
-      this.shake *= 0.85;
+      this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.5;
+      this.shake *= Math.exp(-dt * 22);
     }
     this.camera.lookAt(0, this.cameraMode === "overhead" ? 0 : 0.9, 0);
     this.renderer.render(this.scene, this.camera);
