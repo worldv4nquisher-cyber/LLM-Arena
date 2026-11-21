@@ -164,6 +164,9 @@ async function startMatch() {
   stop.hidden = false;
   settings.forEach(control => { control.disabled = true; });
   status('准备开赛', 'active');
+  if (boardElement.getBoundingClientRect().bottom > window.innerHeight) {
+    ui('match').scrollIntoView();
+  }
   let turns = 0;
   try {
     const response = await fetch('./api/matches', {
