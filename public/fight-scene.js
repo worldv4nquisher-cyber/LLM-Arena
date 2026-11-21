@@ -1,5 +1,5 @@
 import * as T from "/vendor/three.module.js";
-import { CONTACT, RELEASE, ease, motion, reaction, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
+import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
 
 const mat = (color, extra = {}) =>
   new T.MeshStandardMaterial({ color, roughness: 0.73, ...extra });
@@ -908,8 +908,7 @@ export class FightScene {
         : { recoil: 0, blocked: false, down: 0 };
       const down = this.result?.states[i].hp === 0 ? 1 : falling;
       const victory = this.result?.winner === i && !down;
-      const evade = action === "evade"
-        ? ease(p / 0.3) * (1 - ease((p - 0.62) / 0.38)) : 0;
+      const evade = pose ? sidestep(pose.beat, i, p) : 0;
       const melee = isMelee(action), ranged = isRanged(action);
       const attack = melee || ranged;
       const x = positions?.[i] ?? this.result?.states[i].x ?? (i ? 2.1 : -2.1);

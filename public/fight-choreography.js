@@ -9,6 +9,16 @@ export const ease = (n) => {
 export const isMelee = (action) => ["strike", "heavy"].includes(action);
 export const isRanged = (action) => ["blast", "ultimate"].includes(action);
 
+export function sidestep(beat, side, progress) {
+  if (beat.actions[side] !== "evade") return 0;
+  const caught = beat.events.some((e) => e.player !== side && e.damage > 0);
+  // A failed dodge starts a step but is caught back in the attack lane at contact.
+  // Successful dodges stay out of that lane while the attack passes through it.
+  return ease(progress / 0.25) * (1 - (caught
+    ? ease((progress - 0.28) / (CONTACT - 0.28))
+    : ease((progress - 0.62) / 0.38)));
+}
+
 export function motion(action, progress) {
   const p = clamp(progress);
   const recovery = 1 - ease((p - 0.59) / 0.41);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CONTACT, combatPositions, motion, reaction } from "../public/fight-choreography.js";
+import { CONTACT, combatPositions, motion, reaction, sidestep } from "../public/fight-choreography.js";
 import { simulateFight } from "../public/fight-engine.js";
 
 test("melee closes the visual gap at contact without crossing either fighter", () => {
@@ -44,4 +44,15 @@ test("heavy attacks have a distinct anticipation while all strikes recover", () 
     assert.equal(motion(action, CONTACT).extension, 1);
     assert.equal(motion(action, 1).extension, 0);
   }
+});
+
+test("a failed sidestep is caught in the attack lane, not shown as a successful dodge", () => {
+  // Seed 27, R1 exchange 13: Claude's sidestep fails against GPT's lethal blast.
+  const beat = simulateFight({ players: ["gpt", "claude"], seed: 27 }).rounds[0].beats[12];
+  assert.equal(beat.actions[1], "evade");
+  assert.equal(beat.events[0].outcome, "hit");
+  assert(sidestep(beat, 1, 0.25) > 0.9, "start the dodge attempt");
+  assert.equal(sidestep(beat, 1, CONTACT), 0, "the hit and target share the attack lane");
+  const escaped = { ...beat, events: [{ ...beat.events[0], damage: 0, outcome: "evade" }] };
+  assert.equal(sidestep(escaped, 1, CONTACT), 1, "successful dodge clears the projectile");
 });
