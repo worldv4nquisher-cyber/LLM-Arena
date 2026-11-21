@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { simulateFight, fighters, styles } from "../public/fight-engine.js";
 import { createArena } from "../server.js";
+import { createLadder } from "../fight-ladder.js";
 
 test("fight replay is deterministic, bounded, and settles damage simultaneously", () => {
   const input = { players: ["gpt", "claude"], seed: 123 };
@@ -69,7 +70,7 @@ test("fight input rejects unknown fighters, unsafe seeds and unsupported tactics
 });
 
 test("keyless fight API serves complete replays and local 3D assets; classic remains available", async (t) => {
-  const app = createArena({ env: {}, turnDelay: 0 });
+  const app = createArena({ env: {}, turnDelay: 0, ladder: createLadder({path:null}) });
   app.listen(0, "127.0.0.1");
   await once(app, "listening");
   t.after(() => new Promise((resolve) => app.close(resolve)));
@@ -80,12 +81,16 @@ test("keyless fight API serves complete replays and local 3D assets; classic rem
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
-  const response = await post({ players: ["deepseek", "grok"], seed: 42 });
-  assert.equal(response.status, 200);
-  const replay = await response.json();
-  assert.equal(replay.mode, "demo");
+  const response = await post({ players: ["deepseek", "grok"], controllers:["builtin:deepseek","builtin:grok"], seed: 42 });
+  assert.equal(response.status, 202);
+  const {id} = await response.json();
+  let job;
+  do { job=await fetch(`${url}/api/fights/${id}`).then(r=>r.json()); } while(job.status==='running');
+  assert.equal(job.status,'done');
+  const replay=job.replay;
+  assert.equal(replay.version, 2);
   assert.equal(replay.seed, 42);
-  assert(replay.rounds.length > 1);
+  assert(replay.games[0].rounds.length > 1);
   assert.equal((await post({ players: ["gpt", "bad"] })).status, 400);
   assert.equal(
     (

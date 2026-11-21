@@ -8,7 +8,7 @@ function state(cells=[3,4]) {const s=createState([movePool.map(m=>m.id).concat(u
 const turn=(s,a,b)=>resolveTurn(s,[{move:a},{move:b}],seededRng(4));
 const series=(seed=42,games=2)=>runSeries({players:['gpt','claude'],controllers:['gpt','claude'].map(id=>createBuiltinController(id,{seed})),seed,games});
 test('custom budget validation, quick restriction and hidden scout information',()=>{
-  assert.equal(validateCustom({name:'拳',damage:4,speed:4,range:['near','mid']}).valid,true);
+  assert.equal(validateCustom({name:'拳',damage:2,speed:4,range:['near','mid']}).valid,true);
   for(const c of [null,{}, {name:'拳',damage:8,speed:4,range:['near']},{name:'拳',damage:-1,speed:0,range:['near']}]) assert.equal(validateCustom(c).valid,false);
   const s=state();s.fighters[0].budgetLeft=0;
   assert.ok(legalMoves(s).every(m=>m.quick));assert.ok(!legalMoves(s).some(m=>m.id==='throw'));
@@ -20,8 +20,8 @@ test('custom budget validation, quick restriction and hidden scout information',
 });
 test('counter table, trades, feints, armor, whiff, lag and stage',()=>{
   assert.equal(turn(state(),'throw','guard').state.fighters[1].hp,88);
-  let r=turn(state(),'jab','strike');assert.deepEqual(r.state.fighters.map(f=>f.hp),[100,94]);
-  r=turn(state(),'jab','jab');assert.deepEqual(r.state.fighters.map(f=>f.hp),[94,94]);
+  let r=turn(state(),'jab','strike');assert.deepEqual(r.state.fighters.map(f=>f.hp),[100,95]);
+  r=turn(state(),'jab','jab');assert.deepEqual(r.state.fighters.map(f=>f.hp),[95,95]);
   r=turn(state(),'feint','guard');assert.equal(r.beat.feints[0],true);assert.equal(r.state.fighters[1].lag,1);
   assert.equal(turn(state(),'jab','parry').state.fighters[0].hp,92);
   assert.equal(turn(state(),'throw','parry').state.fighters[1].hp,88);
@@ -66,7 +66,7 @@ test('garbage, throws and timeouts are recorded as stunned with lag',async()=>{
   for(const decide of [async()=>null,async()=>{throw new Error('broken');},async()=>{throw null;},async()=>({move:'invented',reason:'乱来'}),()=>new Promise(()=>{})]) {
     let calls=0;
     const c=scripted(v=>{if(calls++===0)return decide(v);return {move:'rest',reason:'休息'};});
-    const replay=await runSeries({players:['a','b'],controllers:[c,scripted(async()=>({move:'rest',reason:'休息'}))],games:1});
+    const replay=await runSeries({players:['a','b'],controllers:[c,scripted(async()=>({move:'rest',reason:'休息'}))],games:1,deadlines:{normal:10,quick:5}});
     const b=replay.games[0].rounds[0].beats[0];assert.equal(b.moves[0],'stunned');assert.ok(b.mistakes[0]);assert.equal(b.states[0].lag,2);assert.ok(replay.games[0].stats[0].mistakes>0);
   }
 });
@@ -90,4 +90,7 @@ test('200-game seeded built-in round robin is varied and decisive',async()=>{
   }
   console.log('BALANCE',JSON.stringify({wins,endings,moves,finishes}));
   assert.ok(Object.values(wins).every(n=>n>0));assert.ok(endings.ko>0);assert.ok(endings['time-up']>0);assert.ok(Object.keys(moves).length>=12);assert.ok(!moves.stunned);
+  assert.ok(Object.values(wins).every(n=>n>=24&&n<=60));
+  const totalFinishes=Object.values(finishes).reduce((a,b)=>a+b,0);
+  assert.ok(Object.values(finishes).every(n=>n/totalFinishes<=.205));
 });

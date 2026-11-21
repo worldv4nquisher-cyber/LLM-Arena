@@ -1,16 +1,17 @@
 import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary} from './public/strategy-rules.js';
+import {ModelError} from './opponents.js';
 
 const freshStats = () => ({mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,planTurns:0,budgetUsed:0,scouts:0,rounds:[],betweenRoundImprovement:[]});
 function rates(s) {
   return {...s,mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:s.predictionsCorrect/Math.max(1,s.predictions),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted)};
 }
-async function invoke(controller, method, view) {
+async function invoke(controller, method, view, deadlines) {
   let timer;
   try {
-    const result=await Promise.race([Promise.resolve().then(()=>controller[method](structuredClone(view))),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('timeout')),view.you?.budgetLeft===0?5000:15000);})]);
+    const result=await Promise.race([Promise.resolve().then(()=>controller[method](structuredClone(view))),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new ModelError('timeout')),view.you?.budgetLeft===0?deadlines.quick:deadlines.normal);})]);
     if(!result || typeof result!=='object' || Array.isArray(result)) throw new Error('invalid output');
     return {result};
-  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw'};} finally {clearTimeout(timer);}
+  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};} finally {clearTimeout(timer);}
 }
 function decisionError(r, view) {
   if(!view.legalMoves.some(m=>m.id===r.move)) return 'illegal move';
@@ -19,21 +20,30 @@ function decisionError(r, view) {
   if(r.plan!==undefined&&(!Array.isArray(r.plan)||r.plan.length>3||r.plan.some(p=>!p||!planConditions.includes(p.if)||typeof p.then!=='string'||![...baseMoves,...movePool,...ultimates,{id:'custom'}].some(m=>m.id===p.then)))) return 'invalid plan';
 }
 const winnerOf = hp => hp[0]===hp[1]?null:hp[0]>hp[1]?0:1;
-export async function runSeries({players,controllers,games=2,seed=1,memory=[],onProgress}={}) {
+export async function runSeries({players,controllers,games=2,seed=1,memory=[],onProgress,deadlines={normal:15000,quick:5000}}={}) {
+  deadlines={normal:15000,quick:5000,...deadlines};
+  if(![deadlines.normal,deadlines.quick].every(n=>Number.isFinite(n)&&n>0)) throw new Error('Invalid referee deadlines');
   if(!Array.isArray(players)||players.length!==2||!Array.isArray(controllers)||controllers.length!==2||!Number.isInteger(games)||games<1) throw new Error('Two players and controllers and positive games required');
   const replay={version:2,seed,players:[...players],controllers:controllers.map(c=>c.id),games:[],series:{wins:[0,0]},rulesSummary};
   const history=structuredClone(memory), totals=[freshStats(),freshStats()];
+  const failures=[0,0];
+  const callController=async(c,method,view,index)=>{
+    const call=await invoke(c,method,view,deadlines);
+    if(method==='decide') failures[index]=call.providerFailure?failures[index]+1:0;
+    if(failures[index]>=3) throw new ModelError(`${c.id} 连续三次服务商请求失败：${call.error}。本场未计入战绩。`);
+    return call;
+  };
   for(let g=0;g<games;g++) {
     const sides=g%2?[1,0]:[0,1], cs=sides.map(i=>controllers[i]), rng=seededRng(`${seed}:${g}`), stats=[freshStats(),freshStats()], bans=[], draftMistakes=[[],[]];
     for(let i=0;i<2;i++) {
       stats[i].decisions++;
-      const call=await invoke(cs[i],'draft',{phase:'ban',pool:movePool.filter(m=>!bans.includes(m.id)),bans:[...bans],memory:history});
+      const call=await callController(cs[i],'draft',{phase:'ban',pool:movePool.filter(m=>!bans.includes(m.id)),bans:[...bans],memory:history},sides[i]);
       let ban=call.result?.ban;
       if(call.error||!movePool.some(m=>m.id===ban)||bans.includes(ban)) {draftMistakes[i].push(call.error||'invalid ban');stats[i].mistakes++;ban=movePool.find(m=>!bans.includes(m.id)).id;}
       bans.push(ban);
     }
     const pool=movePool.filter(m=>!bans.includes(m.id));
-    const picks=await Promise.all(cs.map(c=>invoke(c,'draft',{phase:'pick',pool,bans,ultimates,memory:history})));
+    const picks=await Promise.all(cs.map((c,i)=>callController(c,'draft',{phase:'pick',pool,bans,ultimates,memory:history},sides[i])));
     const selections=picks.map((call,i)=>{
       stats[i].decisions++;
       const r=call.result;
@@ -58,7 +68,7 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
             plans[i]=[];
           }
           stats[i].decisions++;
-          const call=await invoke(c,'decide',views[i]);
+          const call=await callController(c,'decide',views[i],sides[i]);
           if(budgets[i]>0) {budgets[i]--;stats[i].budgetUsed++;}
           const error=call.error||decisionError(call.result,views[i]);
           if(error) {stats[i].mistakes++;return {mistake:error,reason:'判断失误，失去行动机会'};}
@@ -83,7 +93,7 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
       if(winner!==null) game.wins[winner]++;
       const reviews=await Promise.all(cs.map(async(c,i)=>{
         stats[i].decisions++;
-        const call=await invoke(c,'review',{round,you:{...state.fighters[i]},opponent:{...state.fighters[1-i]},beats,winner,memory:history});
+        const call=await callController(c,'review',{round,you:{...state.fighters[i]},opponent:{...state.fighters[1-i]},beats,winner,memory:history},sides[i]);
         if(call.error||typeof call.result?.notes!=='string'||typeof call.result?.adjust!=='string') {stats[i].mistakes++;return {notes:'复盘失误',adjust:'',mistake:call.error||'invalid review'};}
         notes[i].push(call.result);return call.result;
       }));
@@ -101,9 +111,10 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
       const t=totals[sides[i]],s=stats[i];
       for(const key of Object.keys(t)) if(Array.isArray(t[key])) t[key].push(...s[key]);else t[key]+=s[key];
     }
-    history.push({game:g+1,sides,winner:game.winner,opponentMoveFrequencies:[0,1].map(i=>{const counts={};for(const r of game.rounds)for(const b of r.beats)counts[b.moves[i]]=(counts[b.moves[i]]||0)+1;return counts;}),damageTaken:[0,1].map(i=>game.rounds.flatMap(r=>r.beats).flatMap(b=>b.events).filter(e=>e.player!==i).reduce((n,e)=>n+e.damage,0))});
+    history.push({game:g+1,sides,controllerSides:cs.map(c=>c.id),winner:game.winner,opponentMoveFrequencies:[0,1].map(i=>{const counts={};for(const r of game.rounds)for(const b of r.beats)counts[b.moves[i]]=(counts[b.moves[i]]||0)+1;return counts;}),damageTaken:[0,1].map(i=>game.rounds.flatMap(r=>r.beats).flatMap(b=>b.events).filter(e=>e.player!==i).reduce((n,e)=>n+e.damage,0))});
     replay.games.push(game);
   }
   replay.series.winner=winnerOf(replay.series.wins);replay.series.stats=totals.map(rates);
+  replay.memory=history.slice(memory.length);
   return replay;
 }

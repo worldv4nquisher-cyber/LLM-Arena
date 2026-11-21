@@ -1,0 +1,36 @@
+import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
+import {dirname,resolve} from 'node:path';
+import {pathToFileURL,fileURLToPath} from 'node:url';
+
+const empty=()=>({games:0,wins:0,losses:0,draws:0,mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,improvements:0,damageImprovement:0,predictionImprovement:0});
+const pairKey=ids=>JSON.stringify([...ids].sort());
+export function createLadder({path=new URL('./data/ladder.json',import.meta.url)}={}) {
+  let entries={},pairs={},queue=Promise.resolve();
+  const ready=(async()=>{if(path===null)return;try{const data=JSON.parse(await readFile(path,'utf8'));if(data.version===1&&data.entries&&data.pairs){entries=data.entries;pairs=data.pairs;}}catch{/* Persistence is best effort. */}})();
+  async function persist() {
+    if(path===null)return;
+    try {
+      const file=path instanceof URL?path:pathToFileURL(resolve(path));
+      await mkdir(dirname(fileURLToPath(file)),{recursive:true});
+      const temporary=new URL(`${file.href}.tmp`);
+      await writeFile(temporary,JSON.stringify({version:1,entries,pairs}));await rename(temporary,file);
+    } catch {/* In-memory results remain available. */}
+  }
+  return {
+    async snapshot(){await ready;return Object.entries(entries).map(([id,s])=>({id,games:s.games,wins:s.wins,losses:s.losses,draws:s.draws,winRate:s.wins/Math.max(1,s.games),mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:s.predictionsCorrect/Math.max(1,s.predictions),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted),betweenRoundImprovement:{damageShare:s.damageImprovement/Math.max(1,s.improvements),predictionRate:s.predictionImprovement/Math.max(1,s.improvements)}})).sort((a,b)=>b.winRate-a.winRate||a.id.localeCompare(b.id));},
+    async memory(ids){await ready;const saved=pairs[pairKey(ids)]||[];return structuredClone(saved.map(s=>({...s,sides:s.controllerSides.map(id=>ids.indexOf(id))})));},
+    async record(replay){
+      await ready;
+      for(const game of replay.games)for(let side=0;side<2;side++) {
+        const id=replay.controllers[game.sides[side]],s=entries[id]??=empty(),t=game.stats[side];
+        s.games++;if(game.winner===null)s.draws++;else if(game.winner===side)s.wins++;else s.losses++;
+        for(const key of ['mistakes','decisions','predictionsCorrect','predictions','feintsSuccessful','feintsAttempted'])s[key]+=t[key];
+        for(const improvement of t.betweenRoundImprovement){s.improvements++;s.damageImprovement+=improvement.damageShare;s.predictionImprovement+=improvement.predictionRate;}
+      }
+      const key=pairKey(replay.controllers);
+      const summaries=(replay.memory||[]).map(s=>({...s,controllerSides:s.sides.map(i=>replay.controllers[i])}));
+      pairs[key]=[...(pairs[key]||[]),...summaries].slice(-12);
+      queue=queue.then(persist);await queue;
+    },
+  };
+}

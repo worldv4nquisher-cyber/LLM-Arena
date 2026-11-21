@@ -11,7 +11,7 @@ export const baseMoves = [
   move('dash','突进','move',all,15,0,1,0,'advance',{step:2}),
   move('step_back','退步','move',all,0,0,1,0,'evade',{quick:true,step:-1}),
   move('guard','格挡','guard',all,0,0,1,0,'guard',{quick:true}),
-  move('jab','刺拳','attack',['near'],6,6,1,0,'strike',{quick:true}),
+  move('jab','刺拳','attack',['near'],14,5,1,0,'strike',{quick:true}),
   move('throw','投技','throw',['near'],12,12,2,1,'heavy'),
   move('feint','佯攻','feint',all,5,0,1,0,'strike',{quick:true}),
   move('scout','侦察','scout'), move('rest','休息','rest',all,0,0,1,0,'guard',{quick:true}),
@@ -35,9 +35,9 @@ export const ultimates = [
 export const defaultCustom = {name:'星拳',damage:2,range:['near','mid'],speed:4};
 export function validateCustom(input) {
   const c = input;
-  const valid = c && typeof c.name === 'string' && c.name.length > 0 && c.name.length <= 16 && Number.isInteger(c.damage) && c.damage >= 0 && Number.isInteger(c.speed) && c.speed >= 0 && c.speed <= 4 && Array.isArray(c.range) && c.range.includes('near') && new Set(c.range).size === c.range.length && c.range.every(r => all.includes(r)) && c.damage + c.speed + (c.range.includes('mid') ? 2 : 0) + (c.range.includes('far') ? 3 : 0) <= 10;
+  const valid = c && typeof c.name === 'string' && c.name.length > 0 && c.name.length <= 16 && Number.isInteger(c.damage) && c.damage >= 0 && Number.isInteger(c.speed) && c.speed >= 0 && c.speed <= 4 && Array.isArray(c.range) && c.range.includes('near') && new Set(c.range).size === c.range.length && c.range.every(r => all.includes(r)) && 2*c.damage + c.speed + (c.range.includes('mid') ? 2 : 0) + (c.range.includes('far') ? 3 : 0) <= 10;
   const v = valid ? c : defaultCustom;
-  return {valid:!!valid, move:move('custom',v.name,'attack',[...v.range],8+2*v.damage,4+3*v.damage,5-v.speed,1,'strike')};
+  return {valid:!!valid, move:move('custom',v.name,'attack',[...v.range],14+4*v.damage,4+3*v.damage,5-v.speed,1,'strike')};
 }
 export const rulesSummary = '九格战场；同时出招；投破防、快打断慢、同速互击；每局24次深思，计划免费；三局两胜，每回合30拍。';
 export function createState(loadouts = [[],[]], customs = [defaultCustom,defaultCustom]) {
