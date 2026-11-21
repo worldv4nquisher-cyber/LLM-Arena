@@ -13,6 +13,7 @@ const assets = new Map([
   ['/fight.css', ['fight.css', 'text/css; charset=utf-8']],
   ['/fight.js', ['fight.js', 'text/javascript; charset=utf-8']],
   ['/fight-scene.js', ['fight-scene.js', 'text/javascript; charset=utf-8']],
+  ['/fight-models.js', ['fight-models.js', 'text/javascript; charset=utf-8']],
   ['/fight-engine.js', ['fight-engine.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.js', ['fight-broadcast.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.css', ['fight-broadcast.css', 'text/css; charset=utf-8']],
