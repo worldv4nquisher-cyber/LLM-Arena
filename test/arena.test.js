@@ -2,7 +2,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { games, newBoard, play, legalMoves } from '../public/rules.js';
-import { demoMove } from '../opponents.js';
+import { demoMove, parseMove } from '../opponents.js';
 import { createArena } from '../server.js';
 
 function playSequence(game, moves) {
@@ -18,7 +18,8 @@ test('tic-tac-toe detects diagonals and draws, and rejects occupied cells', () =
   assert.deepEqual(win.line, [[0, 0], [1, 1], [2, 2]]);
   const draw = playSequence(game, [1, 2, 3, 5, 4, 6, 8, 7, 9]);
   assert.equal(draw.winner, 0);
-  assert.throws(() => play(game, win.board, 2, 5), /Illegal move/);
+  assert.throws(() => play(game, win.board, 2, 5), /Game is over/);
+  assert.throws(() => play(game, playSequence(game, [1]).board, 2, 1), /Illegal move/);
 });
 
 test('connect four applies gravity and detects horizontal, vertical and diagonal wins', () => {
@@ -122,7 +123,9 @@ test('two live adapters play from model moves and forfeit an illegal move', asyn
   assert(!JSON.stringify(models).includes('mock-anthropic-key'));
   const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'anthropic']));
   assert.deepEqual(transcript.filter(entry => entry.type === 'move').map(entry => entry.move), [1, 5]);
-  assert.deepEqual(transcript.at(-1), { type: 'result', winner: 2, reason: 'illegal-move' });
+  assert.deepEqual(transcript.at(-1), {
+    type: 'result', winner: 2, reason: 'illegal-move', invalidPlayer: 1, detail: '第 1 格已被占用',
+  });
   assert.deepEqual(calls.map(call => call.endpoint), [
     'https://api.openai.com/v1/responses',
     'https://api.anthropic.com/v1/messages',
@@ -138,4 +141,76 @@ test('provider errors are not wins and do not leak the upstream response', async
   const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'striker']));
   assert.deepEqual(transcript.map(event => event.type), ['turn', 'error']);
   assert(!JSON.stringify(transcript).includes('private error'));
+});
+
+test('parses fenced and prose JSON and integer-valued numeric strings', () => {
+  for (const text of ['{"move":5}', '```json\n{"move":5}\n```',
+    'I choose {"move":"5"} because it is central.', '{"note":"brace } and \\" quote","move":5}',
+    '{"move":" 5.0 "}', '{"move":"5e0"}']) assert.equal(parseMove(text), 5, text);
+  for (const text of ['', 'garbage', null, '{}', '{"move":null}', '{"move":true}',
+    '{"move":1.5}', '{"move":"5.1"}', '{"move":""}', '{"move":"Infinity"}', '{"move":[]}']) {
+    assert.equal(parseMove(text), null, String(text));
+  }
+});
+
+for (const [id, game] of Object.entries(games)) {
+  test(`${id} rejects wrong turns and moves after wins or draws without mutation`, () => {
+    const empty = newBoard(game);
+    assert.throws(() => play(game, empty, 2, 1), /Wrong player/);
+    const first = play(game, empty, 1, 1);
+    assert.throws(() => play(game, first.board, 1, 2), /Wrong player/);
+    assert.equal(play(game, first.board, 2, 2).winner, null);
+    const won = playSequence(game, game.gravity ? [1,2,1,2,1,2,1] : [1,4,2,5,3]);
+    const saved = JSON.stringify(won.board);
+    assert.throws(() => play(game, won.board, 2, game.gravity ? 3 : 6), /Game is over/);
+    assert.equal(JSON.stringify(won.board), saved);
+    const draw = playSequence(game, game.gravity ?
+      [6,6,3,6,6,7,4,5,3,4,4,1,4,6,5,3,1,7,6,2,2,3,4,4,7,7,5,3,3,5,5,7,5,2,2,7,1,1,2,1,1,2] :
+      [1,2,3,5,4,6,8,7,9]);
+    assert.equal(draw.winner, 0);
+    assert.throws(() => play(game, draw.board, 1, 1), /Game is over/);
+    for (const move of [0, -1, game.gravity ? 8 : 10, 1.5, '1', null]) {
+      assert.throws(() => play(game, empty, 1, move), /Illegal move/);
+    }
+    if (game.gravity) {
+      const full = playSequence(game, [1,1,1,1,1,1]);
+      assert.throws(() => play(game, full.board, 1, 1), /Illegal move/);
+    }
+  });
+}
+
+test('forfeits include the offending side and bounded raw text or specific illegal move', async t => {
+  let text = '';
+  const url = await server(t, { env, request: async () => Response.json({
+    output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
+  }) });
+  for (const raw of ['', '<script>alert(1)</script>' + 'x'.repeat(100)]) {
+    text = raw;
+    const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'openai']));
+    assert.deepEqual(transcript.at(-1), {
+      type: 'result', winner: 2, reason: 'illegal-move', invalidPlayer: 1,
+      detail: `无法解析：${JSON.stringify(raw.slice(0, 80))}`,
+    });
+    assert.equal(transcript.length, 2);
+  }
+  text = '{"move":99}';
+  assert.equal((await events(await match(url, 'tic-tac-toe', ['openai', 'openai']))).at(-1).detail, '落子 99 超出范围');
+  text = '{"move":1}';
+  const full = await events(await match(url, 'connect-four', ['openai', 'openai']));
+  assert.equal(full.filter(e => e.type === 'move').length, 6);
+  assert.deepEqual(full.at(-1), {
+    type: 'result', winner: 2, reason: 'illegal-move', invalidPlayer: 1, detail: '第 1 列已满',
+  });
+});
+
+test('fenced and numeric-string live moves reach the board rather than forfeiting', async t => {
+  let call = 0;
+  const texts = ['```json\n{"move":5}\n```', 'My move: {"move":"1"}', 'garbage'];
+  const url = await server(t, { env, request: async () => Response.json({
+    output: [{ type: 'message', content: [{ type: 'output_text', text: texts[call++] }] }],
+  }) });
+  const transcript = await events(await match(url, 'tic-tac-toe', ['openai', 'openai']));
+  assert.deepEqual(transcript.filter(e => e.type === 'move').map(e => e.move), [5, 1]);
+  assert.equal(call, 3);
+  assert.equal(transcript.at(-1).invalidPlayer, 1);
 });
