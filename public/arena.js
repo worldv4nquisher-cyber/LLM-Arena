@@ -59,16 +59,26 @@ function setTurn(player) {
   avatars.forEach((element, i) => element.classList.toggle('active', i + 1 === player));
 }
 
+function boardLabel(number) {
+  const label = document.createElement('span');
+  label.className = 'board-label';
+  label.setAttribute('aria-hidden', 'true');
+  label.textContent = number;
+  return label;
+}
+
 function resetMatch() {
-  board = newBoard(games[gameId]);
-  boardElement.classList.toggle('gravity', games[gameId].gravity);
+  const game = games[gameId];
+  board = newBoard(game);
+  boardElement.classList.toggle('gravity', game.gravity);
   cells = board.map(row => row.map(() => {
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.setAttribute('aria-hidden', 'true');
     return cell;
   }));
-  boardElement.replaceChildren(...cells.flat());
+  const columnLabels = board[0].map((_, i) => boardLabel(i + 1));
+  boardElement.replaceChildren(...columnLabels, ...cells.flatMap((row, i) => [boardLabel(i + 1), ...row]));
   refreshBoardLabel();
   setTurn(null);
   moveLog.replaceChildren();
