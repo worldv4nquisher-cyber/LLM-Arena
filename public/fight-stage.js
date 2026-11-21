@@ -3,32 +3,68 @@ import * as T from "/vendor/three.module.js";
 // The venue is independent of the fighters and replay rules. Static geometry is
 // batched by FightScene; the crowd uses five instanced draws on either GPU path.
 export function buildArenaStage(scene, software, h) {
-  const { mat, glow, mesh, ball, box, cylinder, ring, line } = h;
+  const { mat, glow, mesh, ball, box, cylinder, line } = h;
   const slate = mat("#39364e"), stone = mat("#68556d"),
     brass = mat("#bd8658", { metalness: 0.55, roughness: 0.35 }),
-    roof = mat("#383c59"), wall = mat("#795773");
+    roof = mat("#3c4b61"), wall = mat("#927f8a");
   const sky = document.createElement("canvas");
-  sky.width = 32; sky.height = 512;
+  sky.width = 1024; sky.height = 512;
   const skyCtx = sky.getContext("2d"), gradient = skyCtx.createLinearGradient(0, 0, 0, 512);
   for (const [at, color] of [[0, "#34315f"], [0.36, "#ad6487"], [0.49, "#fa9870"], [0.58, "#edb080"], [1, "#665174"]])
     gradient.addColorStop(at, color);
-  skyCtx.fillStyle = gradient; skyCtx.fillRect(0, 0, 32, 512);
+  skyCtx.fillStyle = gradient; skyCtx.fillRect(0, 0, 1024, 512);
+  // Soft, painted cloud banks add depth without translucent meshes or a pass.
+  for (let i = 0; i < 18; i++) {
+    const x = 65 + (i * 173) % 900, y = 155 + (i * 43) % 85;
+    const cloud = skyCtx.createRadialGradient(x, y, 0, x, y, 85);
+    cloud.addColorStop(0, i % 2 ? "#ffd4ae38" : "#7b5e8840");
+    cloud.addColorStop(1, "#ffd4ae00");
+    skyCtx.save(); skyCtx.translate(x, y); skyCtx.scale(1, 0.13);
+    skyCtx.translate(-x, -y); skyCtx.fillStyle = cloud;
+    skyCtx.fillRect(x - 85, y - 85, 170, 170); skyCtx.restore();
+  }
   const skyTexture = new T.CanvasTexture(sky); skyTexture.colorSpace = T.SRGBColorSpace;
   mesh(scene, new T.SphereGeometry(85, 32, 20), new T.MeshBasicMaterial({ map: skyTexture, side: T.BackSide, fog: false }));
   ball(scene, new T.MeshBasicMaterial({ color: "#ffd1a0" }), -13, 9, -38, 4.3);
 
+  // Painted ridge silhouettes separate the palace from the sunset horizon.
+  for (const [z, color, lift] of [[-68, "#a18caa", 3], [-56, "#817c99", 0]]) {
+    const ridge = new T.Shape(); ridge.moveTo(-85, -8);
+    for (let i = 0; i <= 18; i++) ridge.lineTo(-85 + i * 9.5, 2 + lift + Math.sin(i * 2.1) * 3 + Math.sin(i * 0.7) * 2);
+    ridge.lineTo(86, -8); ridge.closePath();
+    const mountain = mesh(scene, new T.ShapeGeometry(ridge), new T.MeshBasicMaterial({ color }), 0, 0, z);
+    mountain.castShadow = mountain.receiveShadow = false;
+  }
+
   // A baked sunset sheen gives the ring depth even when real-time shadows and
   // reflections are disabled on a software renderer. No extra render pass.
-  const floor = document.createElement("canvas"); floor.width = floor.height = 512;
+  const floor = document.createElement("canvas"); floor.width = floor.height = 1024;
   const ctx = floor.getContext("2d");
-  ctx.fillStyle = "#685667"; ctx.fillRect(0, 0, 512, 512);
-  const sheen = ctx.createRadialGradient(190, 100, 5, 225, 245, 340);
-  sheen.addColorStop(0, "#edb28c"); sheen.addColorStop(0.3, "#ae7e83"); sheen.addColorStop(1, "#4a4664");
-  ctx.fillStyle = sheen; ctx.fillRect(0, 0, 512, 512);
-  for (let y = 0; y < 512; y += 32) {
-    ctx.fillStyle = "#28283b55"; ctx.fillRect(0, y, 512, 2);
-    ctx.fillStyle = "#ffe5b51c"; ctx.fillRect(0, y + 2, 512, 1);
-    for (let x = (y % 64 ? 32 : 0); x < 512; x += 64) ctx.fillRect(x, y, 1, 32);
+  ctx.fillStyle = "#454c5d"; ctx.fillRect(0, 0, 1024, 1024);
+  // Nearly square, staggered slabs; both joints have the same quiet contrast.
+  for (let row = 0; row < 8; row++) {
+    for (let column = -1; column < 9; column++) {
+      const x = column * 144 + (row % 2) * 72, y = row * 128;
+      const light = 39 + Math.sin(row * 13 + column * 7) * 2;
+      ctx.fillStyle = `hsl(225 10% ${light}%)`; ctx.fillRect(x + 1, y + 1, 142, 126);
+      ctx.fillStyle = "#ddd8cb20"; ctx.fillRect(x + 2, y + 2, 140, 1); ctx.fillRect(x + 2, y + 2, 1, 124);
+    }
+  }
+  // Small mineral flecks are baked, not individual scene objects.
+  for (let i = 0; i < 1700; i++) {
+    ctx.fillStyle = i % 2 ? "#dedcce0b" : "#252d4012";
+    ctx.fillRect((i * 139.3) % 1024, (i * 317.7) % 1024, 1 + i % 3, 1);
+  }
+  ctx.save(); ctx.translate(300, 260); ctx.rotate(-0.35); ctx.scale(0.5, 1.6);
+  const sheen = ctx.createRadialGradient(0, 0, 5, 0, 0, 430);
+  sheen.addColorStop(0, "#ffc49388"); sheen.addColorStop(0.3, "#e8ba9838"); sheen.addColorStop(1, "#edb28c00");
+  ctx.fillStyle = sheen; ctx.fillRect(-430, -430, 860, 860); ctx.restore();
+  // A restrained engraved border leaves the center clear for combat cues.
+  ctx.strokeStyle = "#c7a98470"; ctx.lineWidth = 1.5;
+  for (const r of [451, 460]) { ctx.beginPath(); ctx.arc(512, 512, r, 0, Math.PI * 2); ctx.stroke(); }
+  for (let i = 0; i < 24; i++) {
+    ctx.save(); ctx.translate(512, 512); ctx.rotate(i * Math.PI / 12);
+    ctx.beginPath(); ctx.moveTo(-5, 456); ctx.lineTo(0, 448); ctx.lineTo(5, 456); ctx.lineTo(0, 464); ctx.closePath(); ctx.stroke(); ctx.restore();
   }
   const floorTexture = new T.CanvasTexture(floor); floorTexture.colorSpace = T.SRGBColorSpace;
   cylinder(scene, slate, 0, -0.6, 0, 5.65, 5.9, 0.55, 80);
@@ -36,10 +72,14 @@ export function buildArenaStage(scene, software, h) {
   cylinder(scene, stone, 0, -0.15, 0, 5.45, 5.55, 0.2, 80);
   const surface = mesh(scene, new T.CircleGeometry(5.4, 96), mat("#ffffff", { map: floorTexture, roughness: 0.3, metalness: 0.25 }), 0, -0.035, 0);
   surface.rotation.x = -Math.PI / 2;
-  ring(scene, "#65d7ed", 5.42, -0.1, 0.04);
-  ring(scene, "#f0c49b", 5.2, -0.025, 0.02);
-  ring(scene, "#69b7d1", 4.65, -0.022, 0.014);
-  ring(scene, "#78b3c4", 1.8, -0.02, 0.012);
+  function inlayRing(color, radius, y, tube) {
+    const inset = mesh(scene, new T.TorusGeometry(radius, tube, 6, 96), mat(color, { emissive: color, emissiveIntensity: 0.35 }), 0, y, 0);
+    inset.rotation.x = -Math.PI / 2;
+  }
+  inlayRing("#58b6c8", 5.42, -0.1, 0.04);
+  inlayRing("#c8a47c", 5.2, -0.025, 0.02);
+  inlayRing("#66abb9", 4.65, -0.022, 0.014);
+  inlayRing("#78a8af", 1.8, -0.02, 0.012);
   for (let i = 0; i < 12; i++) {
     const a = i * Math.PI / 6;
     const inset = box(scene, brass, Math.sin(a) * 4.92, -0.015, Math.cos(a) * 4.92, 0.16, 0.012, 0.34);
@@ -54,35 +94,48 @@ export function buildArenaStage(scene, software, h) {
   cylinder(scene, slate, 0, -1.2, -1, 15, 14.5, 0.7, 80);
 
   // Radial sectors keep terrace floors, audience feet and rails aligned.
-  function arc(radius, y, thickness, material, tube = 0.035) {
+  function arc(radius, y, thickness, material, start, end, tube = 0.035) {
     const points = [];
-    for (let j = 0; j <= 80; j++) {
-      const a = -2.05 + j / 80 * 4.1;
+    for (let j = 0; j <= 20; j++) {
+      const a = start + j / 20 * (end - start);
       points.push(new T.Vector3(Math.sin(a) * radius, y, -Math.cos(a) * radius - 0.6));
     }
-    return mesh(scene, new T.TubeGeometry(new T.CatmullRomCurve3(points), 80, tube, thickness, false), material);
+    return mesh(scene, new T.TubeGeometry(new T.CatmullRomCurve3(points), 20, tube, thickness, false), material);
   }
+  const sections = [[-2.05, -1.3], [-1.18, -0.44], [-0.32, 0.32], [0.44, 1.18], [1.3, 2.05]];
+  const fascia = mat("#956b57", { emissive: "#d29b64", emissiveIntensity: 0.22 });
   const spectators = [];
   for (let tier = 0; tier < 3; tier++) {
     const radius = 8 + tier * 1.25, level = -0.25 + tier * 0.85;
+    for (const [start, end] of sections) {
     const shape = new T.Shape();
-    for (let j = 0; j <= 80; j++) {
-      const a = -2.05 + j / 80 * 4.1, x = Math.sin(a) * (radius + 0.6), z = -Math.cos(a) * (radius + 0.6) - 0.6;
+    for (let j = 0; j <= 20; j++) {
+      const a = start + j / 20 * (end - start), x = Math.sin(a) * (radius + 0.6), z = -Math.cos(a) * (radius + 0.6) - 0.6;
       if (!j) shape.moveTo(x, -z); else shape.lineTo(x, -z);
     }
-    for (let j = 80; j >= 0; j--) {
-      const a = -2.05 + j / 80 * 4.1;
+    for (let j = 20; j >= 0; j--) {
+      const a = start + j / 20 * (end - start);
       shape.lineTo(Math.sin(a) * (radius - 0.6), Math.cos(a) * (radius - 0.6) + 0.6);
     }
     const terrace = mesh(scene, new T.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false }), tier % 2 ? stone : slate, 0, level - 0.5, 0);
     terrace.rotation.x = -Math.PI / 2;
-    arc(radius - 0.55, level + 0.24, 5, brass);
-    arc(radius - 0.55, level - 0.02, 5, brass, 0.018);
-    for (let j = 0; j < 60; j++) {
-      const a = -2 + j / 59 * 4;
+    arc(radius - 0.55, level + 0.24, 5, brass, start, end);
+    arc(radius - 0.55, level - 0.16, 5, fascia, start, end, 0.045);
+    for (let j = 0; j < 12; j++) {
+      const a = start + 0.045 + j / 11 * (end - start - 0.09);
       const r = radius + Math.sin(j * 9 + tier) * 0.16;
       spectators.push({ x: Math.sin(a) * r, z: -Math.cos(a) * r - 0.6, y: level, a, height: 0.36 + (Math.sin(j * 27 + tier) + 1) * 0.09 });
-      if (j % 4 === 0) cylinder(scene, brass, Math.sin(a) * (radius - 0.55), level + 0.1, -Math.cos(a) * (radius - 0.55) - 0.6, 0.025, 0.025, 0.65, 6);
+      if (j % 4 === 0 || j === 11) cylinder(scene, brass, Math.sin(a) * (radius - 0.55), level + 0.1, -Math.cos(a) * (radius - 0.55) - 0.6, 0.025, 0.025, 0.65, 6);
+    }
+    }
+  }
+  // Clear radial aisles, with shallow treads and warm edge markers.
+  for (const a of [-1.24, -0.38, 0.38, 1.24]) {
+    const stairs = new T.Group(); stairs.rotation.y = -a; stairs.position.z = -0.6; scene.add(stairs);
+    for (let step = 0; step < 15; step++) {
+      const r = 7.45 + step * 0.25, top = -0.25 + step * 0.17;
+      box(stairs, stone, 0, top - 0.16, -r, 0.78, 0.28, 0.27);
+      if (step % 3 === 0) box(stairs, fascia, 0, top - 0.01, -r + 0.13, 0.64, 0.025, 0.025);
     }
   }
   const count = spectators.length;
@@ -118,16 +171,53 @@ export function buildArenaStage(scene, software, h) {
     for (const dx of [-0.36, 0.36]) for (const dz of [-0.33, 0.33]) box(scene, brass, x + dx, 3.99, z + dz, 0.06, 0.68, 0.06);
     const cap = mesh(scene, new T.ConeGeometry(0.9, 0.45, 4), roof, x, 4.65, z); cap.rotation.y = Math.PI / 4;
   }
-  for (const [x, z, size] of [[-16, -25, 1.25], [-8, -23, 1.3], [0, -30, 2.15], [9, -27, 1.6], [18, -32, 1.5], [-24, -38, 1.6]]) {
-    const building = new T.Group(); building.position.set(x, -1, z); building.scale.setScalar(size); scene.add(building);
-    for (let level = 0; level < 4; level++) {
-      const w = 3 - level * 0.45, y = level * 1.35;
-      box(building, wall, 0, y + 0.5, 0, w, 1.25, w);
-      for (let j = -1; j <= 1; j++) box(building, glow("#e9a16e"), j * w * 0.27, y + 0.55, w / 2 + 0.01, 0.16, 0.46, 0.02);
-      const cap = mesh(building, new T.ConeGeometry(w * 1.04, 0.64, 4), roof, 0, y + 1.32, 0); cap.rotation.y = Math.PI / 4;
-      box(building, brass, 0, y + 1.04, w * 0.64, w * 1.45, 0.045, 0.055);
+  // Broad hip roofs with lifted corners, instead of repeated pointed towers.
+  function hipRoof(parent, w, depth, y, material) {
+    const edge = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    const positions = [], indices = [];
+    for (const [scale, lift] of [[1, 0], [0.72, 0.16], [0.22, 0.8]]) {
+      for (const [x, z] of edge) positions.push(x * w / 2 * scale, y + lift + (scale === 1 && x && z ? 0.2 : 0), z * depth / 2 * scale);
     }
-    cylinder(building, brass, 0, 5.6, 0, 0.025, 0.08, 0.85, 6);
+    for (let layer = 0; layer < 2; layer++) for (let i = 0; i < 8; i++) {
+      const a = layer * 8 + i, b = layer * 8 + (i + 1) % 8, c = a + 8, d = b + 8;
+      indices.push(a, c, b, b, c, d);
+    }
+    // Close the small upper plateau; it is visible from the overhead camera.
+    for (let i = 1; i < 7; i++) indices.push(16, 16 + i + 1, 16 + i);
+    const geometry = new T.BufferGeometry(); geometry.setAttribute("position", new T.Float32BufferAttribute(positions, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
+    mesh(parent, geometry, material);
+    for (const z of [-depth / 2, depth / 2]) line(parent, [[-w / 2, y + 0.2, z], [-w * 0.35, y, z], [0, y, z], [w * 0.35, y, z], [w / 2, y + 0.2, z]], "#b79573", 0.035);
+  }
+  const timber = mat("#5c4655"), paper = mat("#e9b686", { emissive: "#dc995a", emissiveIntensity: 0.25 });
+  function pavilion(parent, x, y, z, w, depth, height, material = wall) {
+    const group = new T.Group(); group.position.set(x, y, z); parent.add(group);
+    box(group, material, 0, height / 2, 0, w, height, depth);
+    box(group, timber, 0, 0.08, depth / 2 + 0.06, w + 0.25, 0.16, 0.2);
+    for (let i = 0; i < 5; i++) {
+      const px = (i - 2) * w / 5;
+      box(group, paper, px, height * 0.55, depth / 2 + 0.02, w * 0.13, height * 0.52, 0.03);
+      box(group, timber, px, height * 0.55, depth / 2 + 0.045, 0.04, height * 0.55, 0.04);
+      box(group, timber, px, height * 0.55, depth / 2 + 0.045, w * 0.14, 0.04, 0.04);
+    }
+    for (const side of [-1, 1]) box(group, timber, side * (w / 2 - 0.08), height / 2, depth / 2 + 0.07, 0.16, height, 0.16);
+    box(group, timber, 0, height - 0.12, depth / 2 + 0.08, w, 0.16, 0.18);
+    hipRoof(group, w * 1.35, depth * 1.4, height, roof);
+    return group;
+  }
+  const palace = new T.Group(); palace.position.set(0, -1.8, -31); scene.add(palace);
+  box(palace, slate, 0, 0, 0, 15, 0.8, 6);
+  pavilion(palace, 0, 0.4, 0, 8, 4.3, 1.7);
+  pavilion(palace, 0, 2.9, -0.3, 5.8, 3.4, 1.65);
+  pavilion(palace, 0, 5.35, -0.5, 3.7, 2.5, 1.4);
+  for (const side of [-1, 1]) pavilion(palace, side * 6.1, 0.4, -0.7, 4, 3.4, 1.4);
+  cylinder(palace, brass, 0, 8, -0.5, 0.025, 0.1, 1.2, 8);
+  ball(palace, brass, 0, 8.55, -0.5, 0.13);
+  // Lower, desaturated side buildings leave breathing room around the palace.
+  for (const [x, z, size] of [[-17, -34, 1.1], [17, -37, 1.15], [-27, -45, 1.25], [29, -48, 1.3]]) {
+    const building = new T.Group(); building.position.set(x, -1.6, z); building.scale.setScalar(size); scene.add(building);
+    const distantWall = mat("#8b8399");
+    pavilion(building, 0, 0, 0, 4.5, 3.2, 1.6, distantWall);
+    pavilion(building, 0, 2.4, -0.3, 3, 2.5, 1.4, distantWall);
   }
   // Blossom clusters use low-poly geometry; layered pinks remain legible at dusk.
   for (const [x, z, scale] of [[-8.8, -5, 1], [8.7, -7, 1.1], [-13, -13, 1.3], [13, -17, 1.3]]) {
