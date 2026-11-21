@@ -87,6 +87,7 @@ export function resolveTurn(input, submissions, rng = seededRng(1)) {
     else {const center=(oldCells[0]+oldCells[1])/2;desired[0]=Math.floor(center-.5);desired[1]=desired[0]+1;}
   }
   fs.forEach((f,i)=>{ f.cell=desired[i]; f.stamina-=moves[i].stamina; f.energy-=moves[i].energy; });
+  const startingEnergy=fs.map(f=>f.energy),energyDelta=[0,0];
   const band=bands(fs[1].cell-fs[0].cell);
   // Lunge's range is evaluated at submission distance; other attacks use final positions.
   const inRange=(m)=>m.ranges.includes(m.id==='lunge'?bands(oldCells[1]-oldCells[0]):band);
@@ -99,20 +100,21 @@ export function resolveTurn(input, submissions, rng = seededRng(1)) {
     if(!inRange(m)) {events.push({player:i,action:m.anim,damage:0,outcome:'miss'});return;}
     if(m.kind==='throw' && attacking(o) && inRange(o) && startup[j]<=startup[i]) {events.push({player:i,action:m.anim,damage:0,outcome:'counter'});return;}
     if(o.kind==='parry' && ['strike','heavy','jab','lunge','custom'].includes(m.id)) {
-      damageTaken[i]+=8; fs[j].energy=Math.min(100,fs[j].energy+8); events.push({player:j,action:o.anim,damage:8,outcome:'parry'});return;
+      damageTaken[i]+=8; energyDelta[j]+=8; events.push({player:j,action:o.anim,damage:8,outcome:'parry'});return;
     }
     if((o.id==='barrier'&&m.projectile)||(o.kind==='evade'&&(m.projectile||m.id==='heavy'))) {events.push({player:i,action:m.anim,damage:0,outcome:'evade'});return;}
-    if(o.id==='guard'&&['strike','heavy','jab','blast','custom'].includes(m.id)) {damage*=.25;outcome='block';fs[j].energy=Math.min(100,fs[j].energy+5);}
+    if(o.id==='guard'&&['strike','heavy','jab','blast','custom'].includes(m.id)) {damage*=.25;outcome='block';energyDelta[j]+=5;}
     if(['rest','feint','stunned'].includes(o.kind)) damage*=1.25;
     if((fs[j].cell===0||fs[j].cell===8)&&(m.id==='heavy'||m.kind==='throw'||m.anim==='ultimate')) damage+=5;
     damage=Math.round(damage); damageTaken[j]+=damage;
-    fs[i].energy=Math.min(100,fs[i].energy+8);
-    if(m.drain) {const stolen=Math.min(fs[j].energy,m.drain);fs[j].energy-=stolen;fs[i].energy=Math.min(100,fs[i].energy+stolen);}
+    energyDelta[i]+=8;
+    if(m.drain) {const stolen=Math.min(startingEnergy[j],m.drain);energyDelta[j]-=stolen;energyDelta[i]+=stolen;}
     if(m.id==='sweep') lag[j]++;
     if(attacking(o)&&startup[i]<startup[j]&&!o.armor?.includes(m.id)) cancelled[j]=true;
     events.push({player:i,action:m.anim,damage,outcome:m.kind==='throw'?'throw':outcome});
   }
   for(const i of startup[0]<=startup[1]?[0,1]:[1,0]) hit(i);
+  fs.forEach((f,i)=>{f.energy=Math.max(0,Math.min(100,startingEnergy[i]+energyDelta[i]));});
   moves.forEach((m,i)=>{
     if(m.kind==='feint'&&['guard','parry','evade'].includes(moves[1-i].kind)) {feints[i]=true;lag[1-i]++;fs[i].energy=Math.min(100,fs[i].energy+15);}
     if(m.kind==='scout') fs[i].scouted=true;

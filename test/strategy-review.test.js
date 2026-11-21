@@ -9,7 +9,7 @@ import {createState,resolveTurn,seededRng} from '../public/strategy-rules.js';
 
 function resolve(cells,moves,energy=0) {
   const state=createState([['drain'],['drain']]);
-  state.fighters.forEach((f,i)=>{f.cell=cells[i];f.energy=energy;});
+  state.fighters.forEach((f,i)=>{f.cell=cells[i];f.energy=Array.isArray(energy)?energy[i]:energy;});
   return resolveTurn(state,moves.map(move=>({move})),seededRng(1));
 }
 
@@ -35,4 +35,15 @@ test('collision resolution never displaces a stationary opponent',()=>{
   assert.deepEqual(resolve([7,8],['step_in','rest']).beat.cells,[7,8]);
   assert.deepEqual(resolve([2,4],['dash','dash']).beat.cells,[2,3]);
   assert.deepEqual(resolve([2,4],['step_back','rest']).beat.cells,[1,4]);
+});
+
+test('drain trades use pre-hit energy and settle gains and losses simultaneously',()=>{
+  for(const energy of [0,10,90]) {
+    const result=resolve([2,4],['drain','drain'],energy);
+    assert.deepEqual(result.state.fighters.map(f=>f.energy),[Math.min(100,energy+12),Math.min(100,energy+12)]);
+  }
+  const a=resolve([2,4],['drain','drain'],[0,20]).state.fighters.map(f=>f.energy);
+  const b=resolve([2,4],['drain','drain'],[20,0]).state.fighters.map(f=>f.energy);
+  assert.deepEqual(a,[27,17]);assert.deepEqual(a,b.reverse());
+  assert.deepEqual(resolve([0,8],['drain','drain']).state.fighters.map(f=>f.energy),[4,4]);
 });
