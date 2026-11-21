@@ -428,10 +428,9 @@ h1 span {
   opacity: 0;
 }
 .announcement.result {
-  background: #29213e99;
-  padding: 24px 12px;
-  backdrop-filter: blur(6px);
-  inset: 32% 12% auto;
+  background: #29213ecc;
+  padding: 12px;
+  inset: auto 15% 112px;
   border: 1px solid #e6c7ff66;
   border-radius: 8px;
 }

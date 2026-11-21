@@ -1,5 +1,6 @@
 import { fighters, styles, actionNames } from "./fight-engine.js";
 import { buildBroadcast, broadcastAt, roundCall } from "./fight-broadcast.js";
+import { CONTACT, playbackCues, advancePlayback } from "./fight-choreography.js";
 import { ArenaAudio } from "./fight-audio.js";
 
 const venueAudio = new ArenaAudio();
@@ -25,6 +26,7 @@ let scene,
   finished = false,
   loading = false;
 let lastCommentary = -Infinity;
+let combatCues = [];
 let savedMatches = [];
 try {
   const saved = JSON.parse(localStorage.getItem("celestial-matches") ?? "[]");
@@ -222,15 +224,14 @@ function lockSettings(locked) {
 }
 function beginPlayback() {
   timeline = buildBroadcast(replay);
+  combatCues = playbackCues(timeline);
   elapsed = 0;
   lastBeat = "";
   lastPhase = "";
   finished = false;
   playing = true;
   lastFrame = undefined;
-  scene.lastImpact = "";
-  scene.pose = null;
-  scene.presentation = null;
+  scene.resetPose();
   scene.paused = false;
   lastCommentary = -Infinity;
   $("broadcast-highlight").hidden = true;
@@ -424,8 +425,8 @@ function renderHistory() {
   updateHistoryControls();
 }
 function frame(now) {
-  // Keep the match on wall-clock time even on slower renderers. Hidden tabs
-  // explicitly pause below, so no capped delta should silently slow playback.
+  // Normal playback follows wall-clock time. Stalled renderers still show the
+  // decisive contact and follow-through instead of skipping entire exchanges.
   const dt = Math.max(0, (now - (lastFrame ?? now)) / 1000);
   lastFrame = now;
   if (scene) {
@@ -434,7 +435,7 @@ function frame(now) {
   }
   venueAudio.setPaused(document.hidden || Boolean(replay && !playing && !finished));
   if (playing && replay && scene) {
-    elapsed += dt * Number($("speed").value);
+    elapsed = advancePlayback(elapsed, dt * Number($("speed").value), combatCues, dt);
     const shot = broadcastAt(timeline, elapsed);
     document.querySelector(".broadcast").dataset.phase = shot.type;
     $("broadcast-highlight").hidden = !shot.slowMotion;
@@ -502,7 +503,7 @@ function frame(now) {
         $("center-announcement").classList.add("hidden");
         $("broadcast-state").textContent = "比赛进行中";
         $("clock").textContent = Math.max(0, 45 - index);
-        if (lastBeat !== key && progress >= 0.37) {
+        if (lastBeat !== key && progress >= CONTACT) {
           lastBeat = key;
           updateStats(beat.states, previousWins);
           const special = beat.events.find((e) => e.action === "ultimate");

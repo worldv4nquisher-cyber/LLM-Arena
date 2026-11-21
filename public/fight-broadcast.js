@@ -44,6 +44,13 @@ export function buildBroadcast(replay) {
   return { segments, duration: end };
 }
 
+// Absolute presentation time for a combat pose, including key-hit slow motion.
+export function fightTimeAt(segment, progress) {
+  const slowed = Math.max(0, Math.min(progress, slowEnd) - slowStart);
+  return segment.start + segment.baseDuration *
+    (progress + (segment.keyHit ? slowed * (1 / slowRate - 1) : 0));
+}
+
 export function broadcastAt(timeline, elapsed) {
   const segment = timeline.segments.find((part) => elapsed < part.end);
   if (!segment) return { type: "complete" };
