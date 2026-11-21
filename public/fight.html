@@ -23,7 +23,7 @@
       >
       <nav aria-label="主导航">
         <a class="active" href="/">竞技场</a><a href="#lineup">选手图鉴</a
-        ><a href="/classic">经典棋局 ↗</a>
+        ><a href="#match-history">赛事记录</a><a href="/classic">经典棋局 ↗</a>
       </nav>
       <div class="season"><span class="status-dot"></span> EXHIBITION / 01</div>
     </header>
@@ -38,7 +38,7 @@
         <div class="demo-label">内置策略演示 <span>无需 API 密钥</span></div>
       </div>
       <div class="arena-layout">
-        <section class="broadcast" aria-label="3D 比赛直播">
+        <section class="broadcast" id="broadcast" aria-label="3D 比赛直播">
           <div id="scene"><div id="loading-scene">正在点亮星穹擂台…</div></div>
           <div class="scene-vignette"></div>
           <div class="broadcast-top">
@@ -111,14 +111,17 @@
             <span class="on-air">DEMO FEED</span>
           </div>
         </section>
-        <aside class="control-panel">
+        <aside class="control-panel" id="match-setup" aria-label="对局设置">
           <div class="panel-title">
             <h2>对局设置</h2>
             <span>01 / FIGHT</span>
           </div>
+          <p class="setup-help">
+            选择双方选手与战术，开赛后自动对战。
+          </p>
           <div class="player-config" id="config-0">
             <div class="config-label">
-              <span class="side-dot"></span> P1 <span>挑战者</span>
+              <span class="side-dot"></span> P1 · 选手 <span>挑战者</span>
             </div>
             <label for="player-0">选择选手</label
             ><select id="player-0" aria-label="一号选手"></select
@@ -128,25 +131,33 @@
           <div class="versus"><span></span> VS <span></span></div>
           <div class="player-config" id="config-1">
             <div class="config-label">
-              <span class="side-dot"></span> P2 <span>应战者</span>
+              <span class="side-dot"></span> P2 · 选手 <span>应战者</span>
             </div>
             <label for="player-1">选择选手</label
             ><select id="player-1" aria-label="二号选手"></select
             ><label for="tactic-1">作战策略</label
             ><select id="tactic-1" aria-label="二号选手战术"></select>
           </div>
-          <button id="start" class="primary-button">
-            <span>▶</span> 开始比赛 <span>↗</span>
-          </button>
-          <div class="playback">
-            <button id="pause" disabled>Ⅱ 暂停</button
-            ><label
-              >倍速<select id="speed" aria-label="播放倍速">
-                <option value="0.5">0.5×</option>
-                <option value="1" selected>1×</option>
-                <option value="2">2×</option>
-              </select></label
-            ><button id="replay" disabled>↻ 重播</button>
+          <div class="match-controls" aria-label="比赛播放控制">
+            <div class="match-actions">
+              <button id="start" class="primary-button" disabled>
+                <span>▶</span> 开始比赛 <span>↗</span>
+              </button>
+              <button id="edit-settings" title="结束当前观赛，调整选手与战术">
+                调整对局
+              </button>
+            </div>
+            <div class="playback">
+              <button id="pause" disabled>Ⅱ 暂停</button
+              ><label
+                >倍速<select id="speed" aria-label="播放倍速">
+                  <option value="0.5">0.5×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="2">2×</option>
+                </select></label
+              ><button id="replay" disabled>↻ 重播</button>
+              <a href="#match-history">赛事记录</a>
+            </div>
           </div>
           <p class="mode-note">
             本场由本地策略驱动，并非真实 LLM 推理。<br />先计算、后演出，比赛画面不等待网络。
@@ -163,11 +174,11 @@
       <section id="lineup" class="lineup">
         <div class="section-heading">
           <h2>登场选手 <span>THE CONTENDERS</span></h2>
-          <p>五种性格，一座擂台。<span>点击角色设为 P1</span></p>
+          <p>点击角色设为 P1<span> · 五种性格，一座擂台</span></p>
         </div>
         <div id="fighter-roster"></div>
       </section>
-      <section class="match-history">
+      <section class="match-history" id="match-history">
         <div class="section-heading">
           <h2>赛事记录 <span>RECENT MATCHES</span></h2>
           <p>仅保存在当前浏览器</p>
