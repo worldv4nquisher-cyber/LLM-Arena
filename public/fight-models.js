@@ -382,20 +382,38 @@ function maid(body, head, white, blue, accent) {
   tube(cap, capEdge, blue, 0.018);
   const apron = group(body, "maid-apron");
   // A flat-front tailored apron follows the skirt instead of a white sphere.
-  const apronPath = new T.Shape();
-  apronPath.moveTo(-0.2, 1.2);
-  apronPath.bezierCurveTo(-0.27, 1.05, -0.42, 0.82, -0.32, 0.7);
-  apronPath.quadraticCurveTo(0, 0.55, 0.32, 0.7);
-  apronPath.bezierCurveTo(0.42, 0.82, 0.27, 1.05, 0.2, 1.2);
-  apronPath.closePath();
-  mesh(apron, new T.ExtrudeGeometry(apronPath, { depth: 0.025, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 2, curveSegments: 16 }), white, 0, 0, 0.43);
+  const apronFront = (x, y) => {
+    // Fit over BOTH skirt tiers, including the peaks of their fabric pleats.
+    const radii = [[0.51, 0.52], [0.64, 0.5]].filter(([bottom]) => y >= bottom - 0.02).map(([bottom, radius]) => {
+      const t = T.MathUtils.clamp((1.23 - y) / (1.23 - bottom), 0, 1);
+      return 0.25 + (radius - 0.25) * Math.sin(t * Math.PI / 2) ** 0.9 + 0.022 * t ** 1.6;
+    });
+    const radius = Math.max(...radii);
+    return Math.sqrt(Math.max(0, radius ** 2 - x ** 2)) + 0.025;
+  };
+  // ShapeGeometry triangulates a flat polygon with long interior diagonals.
+  // Subdivide before projecting so no triangle cuts through the curved dress.
+  const apronGeometry = new T.PlaneGeometry(0.7, 0.65, 32, 32);
+  const apronVertices = apronGeometry.getAttribute("position");
+  for (let i = 0; i < apronVertices.count; i++) {
+    const u = apronVertices.getX(i) / 0.35, v = (apronVertices.getY(i) + 0.325) / 0.65;
+    const width = 0.21 + Math.sin((1 - v) * Math.PI * 0.82) * 0.13;
+    const x = u * width, y = 0.6 + v * 0.6 + 0.1 * u ** 2 * (1 - v) ** 3;
+    apronVertices.setXYZ(i, x, y, apronFront(x, y));
+  }
+  apronGeometry.computeVertexNormals();
+  mesh(apron, apronGeometry, white);
   box(apron, white, 0, 1.43, 0.188, 0.2, 0.29, 0.03);
   for (const side of [-1, 1]) {
     box(apron, white, side * 0.14, 1.48, 0.19, 0.05, 0.32, 0.04);
     bow(body, blue, side * 0.29, 1.17, 0.27, 0.7);
   }
-  tube(apron, [[-0.32, 0.72, 0.47], [-0.21, 0.65, 0.47], [0, 0.61, 0.47], [0.21, 0.65, 0.47], [0.32, 0.72, 0.47]], accent, 0.01);
-  bow(apron, blue, 0, 1.15, 0.48, 0.75);
+  const edging = Array.from({ length: 25 }, (_, i) => {
+    const u = i / 12 - 1, x = u * (0.21 + Math.sin(Math.PI * 0.82) * 0.13), y = 0.6 + 0.1 * u ** 2;
+    return [x, y, apronFront(x, y) + 0.007];
+  });
+  tube(apron, edging, accent, 0.01);
+  bow(apron, blue, 0, 1.15, apronFront(0, 1.15) + 0.02, 0.75);
   const tail = group(body, "whale-tail", 0, 0.9, -0.31);
   tube(tail, [[0, 0, 0], [0.53, -0.3, -0.22], [0.9, -0.15, -0.15], [1.03, 0.08, -0.1]], accent, 0.09);
   shape(tail, [[1.03, 0.04], [0.79, 0.35], [0.74, 0.43], [0.98, 0.36], [1.04, 0.23], [1.2, 0.36], [1.39, 0.37], [1.3, 0.2]], blue, 0, 0, -0.1);
