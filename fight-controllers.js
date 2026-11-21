@@ -82,11 +82,11 @@ function providerReason(status,model) {
 const englishRules='Simultaneous hidden actions on cells 0..8. Near=1, mid=2..3, far>=4. Throw beats guard/parry; faster attacks interrupt slower attacks; equal startup trades. Feint baits defense, scout reveals hidden energy/loadout. Best of three rounds, 30 turns each. 24 deep decisions per game; plans are free; at zero budget only quick legal moves. Custom budget: 2*damage + speed + 2 for mid + 3 for far <=10, near required; damage=4+3*damage, startup=5-speed, stamina=14+4*damage. Never invent hidden information.';
 export function liveController(id,model,{request=fetch}={}) {
   if(model?.mode!=='live'||!['openai','anthropic'].includes(model.provider)) throw new Error('Configured live model required');
-  async function ask(method,view) {
+  async function ask(method,view,{signal:parentSignal}={}) {
     const quick=method==='decide'&&view.you?.budgetLeft===0;
     const schema=method==='decide'?'{"move":"legal move id","reason":"中文一句话，最多40字","predict":"opponent move id or category","plan":[{"if":"always|opponent_guarded|hit|missed|was_hit|near|mid|far","then":"move id"}]}':method==='review'?'{"notes":"中文复盘一句话","adjust":"strategy adjustment"}':view.phase==='ban'?'{"ban":"pool move id"}':'{"picks":["four distinct available pool ids"],"ultimate":"one ultimate id","custom":{"name":"中文名","damage":2,"range":["near","mid"],"speed":3},"reason":"中文一句话"}';
     const prompt=[quick?'快速决策 Quick turn: choose ONLY a legal quick move. Reply terse JSON.':`策略格斗：${view.rulesSummary||'同时出招，投技破防，快招打断慢招，侦察揭示底牌。'}\n${englishRules}`,`Phase: ${method}${view.phase?`/${view.phase}`:''}`,`Required JSON schema (plan optional, max 3): ${schema}`, 'Prediction categories: attack/throw/defend/move/feint/scout/rest; defend includes guard/parry/evade/barrier.',`View JSON: ${JSON.stringify(view)}`].join('\n');
-    const openai=model.provider==='openai',ms=Math.min(model.timeout??30000,quick?5000:15000),signal=AbortSignal.timeout(ms);
+    const openai=model.provider==='openai',ms=Math.min(model.timeout??30000,quick?5000:15000),timeout=AbortSignal.timeout(ms),signal=parentSignal?AbortSignal.any([parentSignal,timeout]):timeout;
     let response,data;
     try {
       response=await request(openai?'https://api.openai.com/v1/responses':'https://api.anthropic.com/v1/messages',{
@@ -103,5 +103,5 @@ export function liveController(id,model,{request=fetch}={}) {
     const content=openai?data.output?.filter(p=>p.type==='message').flatMap(p=>p.content||[]).filter(p=>p.type==='output_text').map(p=>p.text).join(''):data.content?.filter(p=>p.type==='text').map(p=>p.text).join('');
     return parseControllerReply(content);
   }
-  return {id,label:`${model.description} ${model.name}`,mode:'live',draft:v=>ask('draft',v),decide:v=>ask('decide',v),review:v=>ask('review',v)};
+  return {id,label:`${model.description} ${model.name}`,mode:'live',draft:(v,options)=>ask('draft',v,options),decide:(v,options)=>ask('decide',v,options),review:(v,options)=>ask('review',v,options)};
 }

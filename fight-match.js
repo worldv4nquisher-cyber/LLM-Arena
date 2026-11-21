@@ -7,13 +7,18 @@ function rates(s) {
 }
 const conditionNames={always:'无条件',opponent_guarded:'对手格挡',hit:'上招命中',missed:'上招落空',was_hit:'自身受击',near:'近距',mid:'中距',far:'远距'};
 const moveNames=Object.fromEntries([...baseMoves,...movePool,...ultimates,{id:'custom',name:'自创招'}].map(m=>[m.id,m.name]));
-async function invoke(controller, method, view, deadlines) {
-  let timer;
+async function invoke(controller, method, view, deadlines, parentSignal) {
+  const abort=new AbortController(),signal=AbortSignal.any([abort.signal,parentSignal]);
+  let timer,onAbort,pending;
   try {
-    const result=await Promise.race([Promise.resolve().then(()=>controller[method](structuredClone(view))),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new ModelError('timeout')),view.you?.budgetLeft===0?deadlines.quick:deadlines.normal);})]);
+    pending=Promise.resolve().then(()=>controller[method](structuredClone(view),{signal}));
+    const stopped=new Promise((_,reject)=>{onAbort=()=>reject(signal.reason);if(signal.aborted)onAbort();else signal.addEventListener('abort',onAbort,{once:true});});
+    timer=setTimeout(()=>abort.abort(new ModelError('timeout')),view.you?.budgetLeft===0?deadlines.quick:deadlines.normal);
+    const result=await Promise.race([pending,stopped]);
     if(!result || typeof result!=='object' || Array.isArray(result)) throw new Error('invalid output');
     return {result};
-  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};} finally {clearTimeout(timer);}
+  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};}
+  finally {clearTimeout(timer);signal.removeEventListener('abort',onAbort);abort.abort();if(controller.mode==='live')await pending?.catch(()=>{});}
 }
 function decisionError(r, view) {
   if(!view.legalMoves.some(m=>m.id===r.move)) return 'illegal move';
@@ -28,13 +33,15 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
   if(!Array.isArray(players)||players.length!==2||!Array.isArray(controllers)||controllers.length!==2||!Number.isInteger(games)||games<1) throw new Error('Two players and controllers and positive games required');
   const replay={version:2,seed,players:[...players],controllers:controllers.map(c=>c.id),games:[],series:{wins:[0,0]},rulesSummary};
   const history=structuredClone(memory), totals=[freshStats(),freshStats()];
-  const failures=[0,0];
+  const failures=[0,0],abort=new AbortController(),activeCalls=new Set();
   const callController=async(c,method,view,index)=>{
-    const call=await invoke(c,method,view,deadlines);
+    const pending=invoke(c,method,view,deadlines,abort.signal);activeCalls.add(pending);
+    let call;try{call=await pending;}finally{activeCalls.delete(pending);}
     if(method==='decide') failures[index]=call.providerFailure?failures[index]+1:0;
-    if(failures[index]>=3) throw new ModelError(`${c.id} 连续三次服务商请求失败：${call.error}。本场未计入战绩。`);
+    if(failures[index]>=3) {const error=new ModelError(`${c.id} 连续三次服务商请求失败：${call.error}。本场未计入战绩。`);abort.abort(error);throw error;}
     return call;
   };
+  try {
   for(let g=0;g<games;g++) {
     const sides=g%2?[1,0]:[0,1], cs=sides.map(i=>controllers[i]), rng=seededRng(`${seed}:${g}`), stats=[freshStats(),freshStats()], bans=[], draftMistakes=[[],[]];
     for(let i=0;i<2;i++) {
@@ -123,4 +130,5 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
   replay.series.winner=winnerOf(replay.series.wins);replay.series.stats=totals.map(rates);
   replay.memory=history.slice(memory.length);
   return replay;
+  } finally {abort.abort();await Promise.allSettled([...activeCalls]);}
 }
