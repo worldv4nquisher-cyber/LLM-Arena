@@ -4,9 +4,17 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { games, newBoard, legalMoves, play } from './public/rules.js';
 import { availableModels, demoMove, liveMove, ModelError } from './opponents.js';
+import { fighters, simulateFight } from './public/fight-engine.js';
+import { randomInt } from 'node:crypto';
 
 const assets = new Map([
-  ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/', ['fight.html', 'text/html; charset=utf-8']],
+  ['/classic', ['index.html', 'text/html; charset=utf-8']],
+  ['/fight.css', ['fight.css', 'text/css; charset=utf-8']],
+  ['/fight.js', ['fight.js', 'text/javascript; charset=utf-8']],
+  ['/fight-scene.js', ['fight-scene.js', 'text/javascript; charset=utf-8']],
+  ['/fight-engine.js', ['fight-engine.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/three.module.js', ['../node_modules/three/build/three.module.js', 'text/javascript; charset=utf-8']],
   ['/arena.css', ['arena.css', 'text/css; charset=utf-8']],
   ['/arena.js', ['arena.js', 'text/javascript; charset=utf-8']],
   ['/rules.js', ['rules.js', 'text/javascript; charset=utf-8']],
@@ -61,6 +69,20 @@ export function createArena({ env = process.env, turnDelay, request = fetch } = 
     if (req.method === 'GET' && path === '/api/models') {
       return json(res, 200, Object.entries(models).map(([id, { name, description, mode }]) =>
         ({ id, name, description, mode })));
+    }
+    if (req.method === 'GET' && path === '/api/fighters') return json(res, 200, fighters);
+    if (req.method === 'POST' && path === '/api/fights') {
+      if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
+        return json(res, 415, { error: '仅接受本站的 JSON 比赛请求。' });
+      }
+      try {
+        const input = await matchInput(req);
+        if (!input || typeof input !== 'object') throw new Error('Invalid request');
+        const replay = simulateFight({ players: input.players, tactics: input.tactics, seed: input.seed ?? randomInt(0x100000000) });
+        return json(res, 200, replay);
+      } catch {
+        return json(res, 400, { error: '请选择两位有效选手和战术。' });
+      }
     }
     if (req.method !== 'POST' || path !== '/api/matches') return json(res, 404, { error: '未找到。' });
     if (req.headers['sec-fetch-site'] === 'cross-site' ||

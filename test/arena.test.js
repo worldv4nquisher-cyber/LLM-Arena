@@ -67,7 +67,7 @@ async function events(response) {
 
 test('serves the arena, hides unconfigured models, and rejects invalid requests', async t => {
   const url = await server(t);
-  const page = await fetch(url);
+  const page = await fetch(`${url}/classic`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /开始对局/);
   assert.equal((await fetch(`${url}/server.js`)).status, 404);
