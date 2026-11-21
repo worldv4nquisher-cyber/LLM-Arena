@@ -28,7 +28,7 @@
         <img src="./icon.svg" width="34" height="34" alt=""> <span>LLM<span class="brand-accent">ARENA</span></span>
       </a>
       <nav aria-label="主导航"><a class="nav-primary" href="#match">竞技场</a><a href="#history">对局记录</a></nav>
-      <span id="mode" class="mode"><i></i> 演示模式</span>
+      <span id="mode" class="mode"><i></i> 机器人演示</span>
     </div>
   </header>
 
@@ -36,18 +36,23 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <p class="eyebrow"><span></span> THE MODEL ARENA</p>
-        <h1 id="hero-title">让模型<span>上场。</span></h1>
-        <p class="hero-detail">不比谁更会说，比谁更会下。选好游戏与参赛选手，现场观战。</p>
+        <h1 id="hero-title">大模型<span>竞技场</span></h1>
+        <p class="hero-detail">在这里看大语言模型对弈。默认由两位内置策略机器人自动下棋，无需密钥，也不用你落子。</p>
+        <p class="hero-detail">直接开始对局，或先更换游戏和选手。</p>
       </div>
       <div class="hero-index" aria-hidden="true"><span>LLM ARENA</span><b>01</b></div>
     </section>
 
     <section id="match" aria-labelledby="match-heading">
-      <div class="section-heading">
+      <div class="section-heading match-heading">
         <div><p class="kicker">01 / MATCH ROOM</p><h2 id="match-heading">竞技擂台</h2></div>
-        <div class="game-picker" role="group" aria-label="选择游戏">
-          <button class="game-option" type="button" data-game="tic-tac-toe" aria-pressed="true"><svg><use href="#grid"/></svg>井字棋</button>
-          <button class="game-option" type="button" data-game="connect-four" aria-pressed="false"><svg><use href="#dots"/></svg>四子棋</button>
+        <div class="match-actions">
+          <div class="game-picker" role="group" aria-label="选择游戏">
+            <button class="game-option" type="button" data-game="tic-tac-toe" aria-pressed="true"><svg><use href="#grid"/></svg>井字棋</button>
+            <button class="game-option" type="button" data-game="connect-four" aria-pressed="false"><svg><use href="#dots"/></svg>四子棋</button>
+          </div>
+          <button type="button" id="start" class="button-primary" disabled><svg><use href="#play"/></svg><span>开始对局</span></button>
+          <button type="button" id="stop-match" class="button-secondary" hidden><svg><use href="#stop"/></svg>停止</button>
         </div>
       </div>
 
@@ -76,8 +81,6 @@
           </div>
           <div class="arena-foot">
             <p id="rule"></p>
-            <button type="button" id="start" class="button-primary" disabled><svg><use href="#play"/></svg><span>开始对局</span></button>
-            <button type="button" id="stop-match" class="button-secondary" hidden><svg><use href="#stop"/></svg>停止</button>
           </div>
         </div>
 
@@ -87,7 +90,7 @@
             <span class="counter" id="turn-count">00 步</span>
           </div>
           <div class="log-scroll">
-            <div id="log-empty" class="empty-log"><span><svg><use href="#log"/></svg></span><p>等待选手落子</p><small>开赛后，每一步都会显示在这里。</small></div>
+            <div id="log-empty" class="empty-log"><span><svg><use href="#log"/></svg></span><p>等待选手落子</p><small>开赛后，这里会显示每步的选手和落子位置。</small></div>
             <ol id="move-log" aria-label="落子记录"></ol>
           </div>
           <div class="log-foot"><span></span> 实时更新 · 观战席</div>

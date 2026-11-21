@@ -39,9 +39,14 @@ function readHistory(fallback = []) {
   } catch { return fallback; }
 }
 
-function status(label, state = 'idle') {
+function status(label, state = 'idle', player = null) {
   ui('status').textContent = label;
   ui('status').dataset.state = state;
+  ui('status').dataset.player = player ?? '';
+}
+
+function playerLabel(player, players) {
+  return `${player === 1 ? '红方' : '蓝方'} · ${players[player - 1].name}`;
 }
 
 function refreshBoardLabel() {
@@ -77,16 +82,16 @@ function resetMatch() {
 function updateSelections() {
   const selected = selectors.map(select => models.get(select.value));
   const live = selected.some(model => model?.mode === 'live');
-  ui('mode').lastChild.textContent = live ? ' 真实模型' : ' 演示模式';
+  ui('mode').lastChild.textContent = live ? ' 真实模型' : ' 机器人演示';
   descriptions.forEach((element, i) => {
     const model = selected[i];
-    element.textContent = model ? (model.mode === 'demo' ? `内置 · ${model.description}` : model.description) : '';
+    element.textContent = model ? (model.mode === 'demo' ? `内置机器人 · ${model.description}` : model.description) : '';
   });
   start.disabled = !selected.every(Boolean);
 }
 
 function addMove(event, players) {
-  const { row, col, player, move, turn } = event;
+  const { row, col, player, turn } = event;
   board[row][col] = player;
   boardElement.querySelector('.last')?.classList.remove('last');
   const cell = cells[row][col];
@@ -104,8 +109,9 @@ function addMove(event, players) {
   num.className = 'move-num';
   num.textContent = String(turn).padStart(2, '0');
   name.className = player === 1 ? 'move-name' : 'move-name blue';
-  name.textContent = players[player - 1];
-  detail.textContent = games[gameId].gravity ? `第 ${move} 列` : `第 ${move} 格`;
+  name.textContent = playerLabel(player, players);
+  name.title = name.textContent;
+  detail.textContent = `第 ${row + 1} 行 · 第 ${col + 1} 列`;
   entry.append(num, name, detail);
   ui('log-empty').hidden = true;
   moveLog.append(entry);
@@ -162,6 +168,9 @@ async function startMatch() {
   stop.hidden = false;
   settings.forEach(control => { control.disabled = true; });
   status('准备开赛', 'active');
+  if (boardElement.getBoundingClientRect().bottom > window.innerHeight) {
+    ui('match').scrollIntoView();
+  }
   let turns = 0;
   try {
     const response = await fetch('./api/matches', {
@@ -176,25 +185,25 @@ async function startMatch() {
       switch (event.type) {
         case 'turn': {
           setTurn(event.player);
-          const label = `${event.player === 1 ? '红方' : '蓝方'}思考中`;
+          const label = `${playerLabel(event.player, players)} 正在思考`;
           const since = Date.now();
-          status(label, 'active');
+          status(label, 'active', event.player);
           clearInterval(thinkingTimer);
           if (players[event.player - 1].mode === 'live') thinkingTimer = setInterval(() => {
             const seconds = Math.floor((Date.now() - since) / 1000);
-            if (seconds >= 3) status(`${label} · ${seconds} 秒`, 'active');
+            if (seconds >= 3) status(`${label} · ${seconds} 秒`, 'active', event.player);
           }, 1000);
           break;
         }
         case 'move':
           clearInterval(thinkingTimer);
           turns = event.turn;
-          addMove(event, players.map(model => model.name));
+          addMove(event, players);
           break;
         case 'result': {
           ended = true;
           const forfeit = event.reason === 'illegal-move';
-          const winner = event.winner === 0 ? '平局' : `${event.winner === 1 ? '红方' : '蓝方'}获胜`;
+          const winner = event.winner === 0 ? '平局' : `${playerLabel(event.winner, players)} 获胜`;
           status(forfeit ? `${winner} · 对手落子无效` : winner, 'result');
           event.line?.forEach(([row, col]) => cells[row][col].classList.add('win'));
           history = readHistory(history);
@@ -254,7 +263,7 @@ try {
   for (const [i, select] of selectors.entries()) {
     const demo = document.createElement('optgroup');
     const live = document.createElement('optgroup');
-    demo.label = '免密钥演示选手';
+    demo.label = '内置机器人（免密钥）';
     live.label = '真实模型';
     for (const model of models.values()) {
       const option = new Option(model.name, model.id);
