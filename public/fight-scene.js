@@ -2,6 +2,7 @@ import * as T from "/vendor/three.module.js";
 import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
 import { buildArenaStage } from "./fight-stage.js";
 import { makeFighter } from "./fight-models.js";
+import { eventTarget } from './strategy-rules.js';
 
 const mat = (color, extra = {}) =>
   new T.MeshStandardMaterial({ color, roughness: 0.73, ...extra });
@@ -229,11 +230,11 @@ export class FightScene {
       const positions = combatPositions(previous, beat, CONTACT);
       for (const event of beat.events)
         if (event.damage > 0)
-          this.impact(event, positions[1 - event.player]);
+          this.impact(event, positions[eventTarget(event)]);
     }
   }
   impact(event, x) {
-    const side = 1 - event.player;
+    const side = eventTarget(event);
     const target = this.fighters[side];
     const ultimate = event.action === "ultimate";
     const blocked = event.outcome === "block";

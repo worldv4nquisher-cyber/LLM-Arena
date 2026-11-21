@@ -5,7 +5,9 @@ import {connect} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createArena} from '../server.js';
 import {createLadder} from '../fight-ladder.js';
-import {createState,resolveTurn,seededRng} from '../public/strategy-rules.js';
+import {createState,resolveTurn,seededRng,makeView,planMatches} from '../public/strategy-rules.js';
+import {reaction,CONTACT} from '../public/fight-choreography.js';
+import {isKeyHit} from '../public/fight-broadcast.js';
 
 function providerReply(view) {
   if(view.phase==='ban')return {ban:view.pool[0].id};
@@ -85,4 +87,19 @@ test('provider abort cancels its peer and keeps the live slot until paid cleanup
   for(let i=0;i<200;i++){job=await fetch(root+`/api/fights/${id}`).then(r=>r.json());if(job.status!=='running')break;await delay(2);}
   assert.equal(job.status,'error');assert.match(job.error,/HTTP 401/);assert.equal(active,0);
   assert.deepEqual(await ladder.snapshot(),[]);assert.equal((await post()).status,202);
+});
+
+test('hazards have a target but no attacker and cannot satisfy combat plan conditions',()=>{
+  const state=createState();state.stage.dangers=[{cells:[2],expires:2}];
+  state.fighters[0].hp=6;
+  const result=resolveTurn(state,[{move:'guard'},{move:'guard'}],seededRng(1)),beat=result.beat;
+  assert.equal(planMatches('hit',makeView(result.state,1),beat,1),false);
+  assert.equal(planMatches('was_hit',makeView(result.state,0),beat,0),false);
+  assert.equal(beat.events[0].player,null);assert.equal(beat.events[0].target,0);
+  assert.deepEqual(beat.states.map(f=>f.hp),[0,100]);
+  assert.ok(reaction(beat,0,CONTACT+.05).recoil>0);assert.equal(reaction(beat,1,CONTACT+.05).recoil,0);
+  assert.equal(isKeyHit(beat),true);
+  const combat={events:[{player:1,damage:8,outcome:'hit'}]};
+  assert.equal(planMatches('hit',makeView(result.state,1),combat,1),true);
+  assert.equal(planMatches('was_hit',makeView(result.state,0),combat,0),true);
 });

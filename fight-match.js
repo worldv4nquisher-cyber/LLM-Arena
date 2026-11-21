@@ -1,4 +1,4 @@
-import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary, moveCategory} from './public/strategy-rules.js';
+import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary, moveCategory, eventTarget} from './public/strategy-rules.js';
 import {ModelError} from './opponents.js';
 
 const freshStats = () => ({mistakes:0,decisions:0,predictionsCorrect:0,predictionsExactCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,planTurns:0,budgetUsed:0,scouts:0,rounds:[],betweenRoundImprovement:[]});
@@ -124,7 +124,7 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
       const t=totals[sides[i]],s=stats[i];
       for(const key of Object.keys(t)) if(Array.isArray(t[key])) t[key].push(...s[key]);else t[key]+=s[key];
     }
-    history.push({game:g+1,sides,controllerSides:cs.map(c=>c.id),winner:game.winner,opponentMoveFrequencies:[0,1].map(i=>{const counts={};for(const r of game.rounds)for(const b of r.beats)counts[b.moves[i]]=(counts[b.moves[i]]||0)+1;return counts;}),damageTaken:[0,1].map(i=>game.rounds.flatMap(r=>r.beats).flatMap(b=>b.events).filter(e=>e.player!==i).reduce((n,e)=>n+e.damage,0))});
+    history.push({game:g+1,sides,controllerSides:cs.map(c=>c.id),winner:game.winner,opponentMoveFrequencies:[0,1].map(i=>{const counts={};for(const r of game.rounds)for(const b of r.beats)counts[b.moves[i]]=(counts[b.moves[i]]||0)+1;return counts;}),damageTaken:[0,1].map(i=>game.rounds.flatMap(r=>r.beats).flatMap(b=>b.events).filter(e=>eventTarget(e)===i).reduce((n,e)=>n+e.damage,0))});
     replay.games.push(game);
   }
   replay.series.winner=winnerOf(replay.series.wins);replay.series.stats=totals.map(rates);

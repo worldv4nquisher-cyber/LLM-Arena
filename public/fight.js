@@ -1,5 +1,5 @@
 import { fighters } from './fight-engine.js';
-import { baseMoves, movePool, ultimates } from './strategy-rules.js';
+import { baseMoves, movePool, ultimates, eventTarget } from './strategy-rules.js';
 import { buildBroadcast, broadcastAt, roundCall } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
@@ -131,7 +131,7 @@ function beatDetails(beat,round,index) {
   const items=beat.stage.items.map(x=>`${{heal:'治疗',energy:'能量',stamina:'体力'}[x.type]}道具@${x.cell}`),dangers=beat.stage.dangers.map(d=>`危险区 ${d.cells.join('/')} · -6 HP`),collected=beat.events.filter(e=>e.outcome==='item').map(e=>`${config(e.player).name}拾取道具`);
   $('stage-ticker').textContent=[...collected,...items,...dangers].join(' · ')||'场地平静 · 九格战场';
   $('battle-feed').prepend(node('li',`G${currentGame+1} R${round.round} · ${index+1} ${beat.names.join(' / ')}`));while($('battle-feed').children.length>24)$('battle-feed').lastChild.remove();$('feed-counter').textContent=`${index+1} EXCHANGES`;
-  beat.events.forEach(e=>{if(!e.damage)return;const n=$(`damage-${1-e.player}`);n.textContent=`−${e.damage}`;n.classList.remove('pop');void n.offsetWidth;n.classList.add('pop');});audio.exchange(beat.events);
+  beat.events.forEach(e=>{if(!e.damage)return;const n=$(`damage-${eventTarget(e)}`);n.textContent=`−${e.damage}`;n.classList.remove('pop');void n.offsetWidth;n.classList.add('pop');});audio.exchange(beat.events);
 }
 function frame(now) {
   const dt=Math.max(0,(now-(lastFrame??now))/1000);lastFrame=now;

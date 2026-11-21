@@ -1,5 +1,6 @@
 // Presentation time is separate from the deterministic simulation. Replaying or
 // changing speed must never change a hit, the round score, or the winner.
+import { eventTarget } from './strategy-rules.js';
 const slowStart = 0.23;
 const slowEnd = 0.7;
 const slowRate = 0.28;
@@ -10,7 +11,7 @@ export function isKeyHit(beat) {
       event.damage > 0 &&
       (event.action === "ultimate" ||
         event.damage >= 12 ||
-        beat.states[1 - event.player].hp === 0),
+        beat.states[eventTarget(event)]?.hp === 0),
   );
 }
 

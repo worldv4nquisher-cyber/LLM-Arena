@@ -1,4 +1,5 @@
 export const bands = d => d === 1 ? 'near' : d <= 3 ? 'mid' : 'far';
+export const eventTarget = e => e.target ?? (e.player===0?1:e.player===1?0:null);
 export function seededRng(seed = 1) {
   let n = 2166136261;
   for (const c of String(seed)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
@@ -63,8 +64,8 @@ export function planMatches(condition, view, previous, side) {
   if(all.includes(condition)) return condition===view.band;
   if(!previous) return false;
   if(condition==='opponent_guarded') return ['guard','parry','evade','barrier'].includes(previous.moves[1-side]);
-  const damage = previous.events.filter(e=>e.player===side).reduce((s,e)=>s+e.damage,0);
-  return condition==='hit'?damage>0:condition==='missed'?previous.events.some(e=>e.player===side&&e.outcome==='miss'):condition==='was_hit'?previous.events.some(e=>e.player===1-side&&e.damage>0):false;
+  const damage = previous.events.filter(e=>e.player===side&&e.outcome!=='danger').reduce((s,e)=>s+e.damage,0);
+  return condition==='hit'?damage>0:condition==='missed'?previous.events.some(e=>e.player===side&&e.outcome==='miss'):condition==='was_hit'?previous.events.some(e=>e.player===1-side&&e.outcome!=='danger'&&e.damage>0):false;
 }
 export function resolveTurn(input, submissions, rng = seededRng(1)) {
   const state=structuredClone(input), fs=state.fighters, turn=++state.turn;
@@ -120,7 +121,7 @@ export function resolveTurn(input, submissions, rng = seededRng(1)) {
     if(m.kind==='scout') fs[i].scouted=true;
     if(m.kind==='stunned') lag[i]+=2;
     if(m.kind==='rest') fs[i].stamina+=25;
-    for(const danger of state.stage.dangers) if(danger.cells.includes(fs[i].cell)) {damageTaken[i]+=6;events.push({player:1-i,action:'blast',damage:6,outcome:'danger'});}
+    for(const danger of state.stage.dangers) if(danger.cells.includes(fs[i].cell)) {damageTaken[i]+=6;events.push({player:null,target:i,source:'stage',action:'blast',damage:6,outcome:'danger'});}
     fs[i].hp=Math.max(0,fs[i].hp-damageTaken[i]);
     fs[i].lag=lag[i];fs[i].stamina=Math.min(100,fs[i].stamina+10);fs[i].energy=Math.min(100,fs[i].energy+4);
     state.stage.items=state.stage.items.filter(item=>{if(item.cell!==fs[i].cell)return true;const key={heal:'hp',energy:'energy',stamina:'stamina'}[item.type];fs[i][key]=Math.min(100,fs[i][key]+{heal:15,energy:30,stamina:40}[item.type]);events.push({player:i,action:'guard',damage:0,outcome:'item',item:item.type});return false;});

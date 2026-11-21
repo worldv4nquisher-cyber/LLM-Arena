@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createState,resolveTurn,makeView,legalMoves,validateCustom,seededRng,movePool,ultimates,moveCategory} from '../public/strategy-rules.js';
+import {createState,resolveTurn,makeView,legalMoves,validateCustom,seededRng,movePool,ultimates,moveCategory,eventTarget} from '../public/strategy-rules.js';
 import {runSeries} from '../fight-match.js';
 import {createBuiltinController,personalities} from '../fight-controllers.js';
 
@@ -41,7 +41,7 @@ test('deterministic series, replay accounting, resource and winner invariants, s
       let hp=[100,100];
       for(const b of r.beats) {
         for(let i=0;i<2;i++) {
-          const damage=b.events.filter(e=>e.player!==i).reduce((n,e)=>n+e.damage,0);
+          const damage=b.events.filter(e=>eventTarget(e)===i).reduce((n,e)=>n+e.damage,0);
           hp[i]=Math.max(0,hp[i]-damage);
           if(b.events.some(e=>e.player===i&&e.outcome==='item'&&e.item==='heal')) hp[i]=Math.min(100,hp[i]+15);
           assert.equal(b.states[i].hp,hp[i]);
