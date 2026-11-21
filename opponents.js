@@ -51,6 +51,35 @@ export function availableModels(env) {
   return models;
 }
 
+export function parseMove(content) {
+  if (typeof content !== 'string') return null;
+  for (let start = 0; start < content.length; start++) {
+    if (content[start] !== '{') continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let end = start; end < content.length; end++) {
+      const char = content[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '{') depth++;
+      else if (char === '}' && --depth === 0) {
+        try {
+          let move = JSON.parse(content.slice(start, end + 1)).move;
+          if (typeof move === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(move.trim())) {
+            move = Number(move);
+          }
+          return Number.isSafeInteger(move) ? move : null;
+        } catch { break; }
+      }
+    }
+  }
+  return null;
+}
+
 export async function liveMove(id, model, game, board, player, signal, request = fetch) {
   const prompt = [
     `Play ${game.gravity ? 'Connect Four' : 'Tic-Tac-Toe'}. You are player ${player}. 0 means empty.`,
@@ -79,10 +108,5 @@ export async function liveMove(id, model, game, board, player, signal, request =
     ? data.output?.filter(part => part.type === 'message').flatMap(part => part.content ?? [])
       .filter(part => part.type === 'output_text').map(part => part.text).join('')
     : data.content?.filter(part => part.type === 'text').map(part => part.text).join('');
-  try {
-    const move = JSON.parse(content)?.move;
-    return Number.isInteger(move) ? move : null;
-  } catch {
-    return null;
-  }
+  return { move: parseMove(content), raw: content ?? '' };
 }
