@@ -1,5 +1,6 @@
 import * as T from "/vendor/three.module.js";
 import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
+import { buildArenaStage } from "./fight-stage.js";
 import { makeFighter } from "./fight-models.js";
 
 const mat = (color, extra = {}) =>
@@ -118,7 +119,7 @@ export class FightScene {
     this.time = 0;
     this.lastImpact = "";
     this.scene = new T.Scene();
-    this.scene.fog = new T.Fog("#be90b9", 23, 65);
+    this.scene.fog = new T.Fog("#c38894", 30, 85);
     this.camera = new T.PerspectiveCamera(39, 1, 0.1, 120);
     this.renderer = new T.WebGLRenderer({
       antialias: false,
@@ -137,15 +138,15 @@ export class FightScene {
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     this.renderer.toneMapping = T.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.05;
     container.append(this.renderer.domElement);
     this.renderer.domElement.setAttribute(
       "aria-label",
       "3D 星穹擂台，双方 AI 拟人选手在场内对战",
     );
-    this.scene.add(new T.HemisphereLight("#dfdeff", "#735369", 2.6));
-    const sun = new T.DirectionalLight("#ffddbd", 4);
-    sun.position.set(-6, 12, 6);
+    this.scene.add(new T.HemisphereLight("#ccc5ef", "#51405d", 1.5));
+    const sun = new T.DirectionalLight("#ffbd8c", 2.8);
+    sun.position.set(-8, 8, -5);
     sun.castShadow = !this.software;
     sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, {
@@ -156,8 +157,8 @@ export class FightScene {
     });
     sun.shadow.normalBias = 0.035;
     this.scene.add(sun);
-    const rim = new T.DirectionalLight("#aaa6ff", 3);
-    rim.position.set(5, 6, -5);
+    const rim = new T.DirectionalLight("#bfc7ff", 1.8);
+    rim.position.set(3, 6, 8);
     this.scene.add(rim);
     this.buildWorld();
     batchMeshes(this.scene, true);
@@ -173,279 +174,11 @@ export class FightScene {
     });
   }
   buildWorld() {
-    const s = this.scene;
-    const skyCanvas = document.createElement("canvas");
-    skyCanvas.width = 16;
-    skyCanvas.height = 512;
-    const ctx = skyCanvas.getContext("2d");
-    const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-    gradient.addColorStop(0, "#4d448c");
-    gradient.addColorStop(0.4, "#bd85b0");
-    gradient.addColorStop(0.66, "#fac2a6");
-    gradient.addColorStop(1, "#e9aec1");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 16, 512);
-    const skyTexture = new T.CanvasTexture(skyCanvas);
-    skyTexture.colorSpace = T.SRGBColorSpace;
-    mesh(
-      s,
-      new T.SphereGeometry(85, 32, 24),
-      new T.MeshBasicMaterial({ map: skyTexture, side: T.BackSide }),
-    );
-    ball(s, new T.MeshBasicMaterial({ color: "#ffdbc0" }), -11, 10, -32, 4);
-    const stone = mat("#a394bc"),
-      edge = mat("#504c77", { metalness: 0.35 }),
-      floor = mat("#dbcee0", { roughness: 0.4, metalness: 0.15 }),
-      gold = mat("#deb98a", { metalness: 0.45 });
-    cylinder(s, edge, 0, -0.47, 0, 5.6, 5.75, 0.5, 80);
-    cylinder(s, stone, 0, -0.18, 0, 5.5, 5.6, 0.25, 80);
-    cylinder(s, floor, 0, -0.025, 0, 5.3, 5.3, 0.12, 80);
-    ring(s, "#b1a0ff", 5.5, -0.2, 0.05);
-    ring(s, "#ffdebd", 5.25, 0.045, 0.025);
-    ring(s, "#ae9ac9", 4.65, 0.045, 0.02);
-    ring(s, "#b8a4d0", 2, 0.045, 0.018);
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      const lineMesh = box(
-        s,
-        mat("#c1b0cf"),
-        Math.sin(a) * 3.7,
-        0.043,
-        Math.cos(a) * 3.7,
-        0.025,
-        0.008,
-        2.9,
-      );
-      lineMesh.rotation.y = a;
-      const inset = box(
-        s,
-        gold,
-        Math.sin(a) * 4.95,
-        0.05,
-        Math.cos(a) * 4.95,
-        0.12,
-        0.018,
-        0.2,
-      );
-      inset.rotation.y = a;
-    }
-    for (let i = 0; i < 6; i++) {
-      const a = (i * Math.PI) / 3;
-      const emblem = mesh(
-        s,
-        new T.TorusGeometry(0.65, 0.045, 8, 60, Math.PI * 1.6),
-        mat("#b49dce"),
-        Math.sin(a) * 0.65,
-        0.052,
-        Math.cos(a) * 0.65,
-      );
-      emblem.rotation.set(Math.PI / 2, 0, a);
-    }
-    // Floating spectator terraces and hundreds of little spectators.
-    for (let tier = 0; tier < 3; tier++) {
-      const radius = 9.2 + tier * 1.5;
-      const terrace = mesh(
-        s,
-        new T.TorusGeometry(radius, 0.24, 4, 90, Math.PI * 1.32),
-        edge,
-        0,
-        -0.3 + tier * 0.65,
-        -1,
-      );
-      terrace.rotation.x = Math.PI / 2;
-      terrace.rotation.z = -0.5;
-      for (let i = 0; i < 90; i++) {
-        const a = (i / 90) * Math.PI * 1.25 + 2.15;
-        const x = Math.sin(a) * radius,
-          z = Math.cos(a) * radius - 1;
-        if (z > 3) continue;
-        const clothing = mat(
-          ["#8770ac", "#de93af", "#6c80ae", "#f1c89c", "#8ac9cb"][i % 5],
-        );
-        cylinder(s, clothing, x, 0.12 + tier * 0.65, z, 0.11, 0.16, 0.37, 6);
-        ball(s, mat("#f3d3c3"), x, 0.42 + tier * 0.65, z, 0.115, 0.13, 0.115);
-        if (i % 7 === 0) {
-          const stick = box(
-            s,
-            glow(i % 2 ? "#c9abff" : "#ffb18a"),
-            x + 0.2,
-            0.5 + tier * 0.65,
-            z,
-            0.035,
-            0.3,
-            0.035,
-          );
-          stick.rotation.z = 0.3;
-        }
-      }
-    }
-    // An original, stylized celestial courtyard. All meshes are generated locally.
-    for (const x of [-7.4, 7.4]) {
-      cylinder(s, edge, x, -0.4, -4.3, 1.1, 1.4, 0.5, 6);
-      cylinder(s, gold, x, 1.7, -4.3, 0.13, 0.18, 4, 8);
-      for (const dx of [-0.47, 0.47])
-        cylinder(s, gold, x + dx, 1.9, -4.3, 0.035, 0.035, 3.2, 8);
-      const banner = box(
-        s,
-        mat("#7269b3", { metalness: 0.2 }),
-        x,
-        2.2,
-        -4.3,
-        0.72,
-        2.4,
-        0.045,
-      );
-      banner.rotation.y = x > 0 ? -0.25 : 0.25;
-      box(s, glow("#d2c4ff"), x, 2.2, -4.25, 0.05, 1.8, 0.04);
-      for (const y of [1.35, 3.2]) box(s, gold, x, y, -4.3, 1.1, 0.09, 0.16);
-      ball(s, glow("#ffd6a2"), x, 4.03, -4.3, 0.23);
-    }
-    for (const [x, z, size] of [
-      [-10, -9, 1.2],
-      [9, -12, 1.4],
-      [-4, -20, 1.7],
-      [16, -22, 1.6],
-    ]) {
-      const building = new T.Group();
-      building.position.set(x, -0.4, z);
-      building.scale.setScalar(size);
-      s.add(building);
-      for (let level = 0; level < 3; level++) {
-        const w = 2.5 - level * 0.45,
-          y = level * 1.4;
-        box(building, mat("#97759d"), 0, y + 0.5, 0, w, 1.3, w);
-        for (const side of [-1, 1]) {
-          box(
-            building,
-            glow("#ffc992"),
-            side * w * 0.3,
-            y + 0.55,
-            w / 2 + 0.01,
-            0.24,
-            0.55,
-            0.02,
-          );
-          cylinder(
-            building,
-            gold,
-            (side * w) / 2,
-            y + 0.55,
-            w / 2,
-            0.055,
-            0.055,
-            1.3,
-            8,
-          );
-        }
-        const roof = mesh(
-          building,
-          new T.ConeGeometry(w * 0.95, 0.7, 4),
-          mat("#4e577d"),
-          0,
-          y + 1.4,
-          0,
-        );
-        roof.rotation.y = Math.PI / 4;
-      }
-      cylinder(building, gold, 0, 4.3, 0, 0.03, 0.07, 0.7, 8);
-    }
-    for (const [x, z] of [
-      [-8, -3],
-      [8, -7],
-      [-13, -12],
-      [13, -15],
-    ])
-      this.tree(x, z);
-    // Camera drones, lanterns, stars and drifting petals animate with the world clock.
-    this.drones = [];
-    for (const side of [-1, 1]) {
-      const drone = new T.Group();
-      drone.userData.dynamic = true;
-      drone.position.set(side * 5.3, 5.5, -3);
-      s.add(drone);
-      ball(
-        drone,
-        mat("#4c516f", { metalness: 0.6 }),
-        0,
-        0,
-        0,
-        0.32,
-        0.18,
-        0.22,
-      );
-      ball(drone, glow("#98e9ff"), 0, 0, 0.2, 0.1);
-      for (const dx of [-0.48, 0.48]) {
-        const rotor = mesh(
-          drone,
-          new T.TorusGeometry(0.27, 0.022, 6, 30),
-          glow("#bdb1ff"),
-          dx,
-          0.12,
-          0,
-        );
-        rotor.rotation.x = Math.PI / 2;
-        box(drone, edge, dx * 0.6, 0, 0, 0.4, 0.04, 0.05);
-      }
-      this.drones.push(drone);
-    }
-    this.petals = [];
-    const petalGeo = new T.SphereGeometry(1, 5, 3),
-      petalMat = mat("#ffd2e4", { side: T.DoubleSide });
-    for (let i = 0; i < (this.software ? 18 : 36); i++) {
-      const p = mesh(
-        s,
-        petalGeo,
-        petalMat,
-        Math.sin(i * 17) * 11,
-        1 + (i % 11) * 0.6,
-        Math.cos(i * 31) * 9,
-      );
-      p.userData.dynamic = true;
-      p.scale.set(0.055, 0.012, 0.035);
-      this.petals.push(p);
-    }
-  }
-  tree(x, z) {
-    const group = new T.Group();
-    group.position.set(x, 0, z);
-    this.scene.add(group);
-    line(
-      group,
-      [
-        [0, -0.5, 0],
-        [0.1, 1.4, 0],
-        [-0.4, 2.7, 0],
-        [0.1, 3.7, 0],
-      ],
-      "#6b4b71",
-      0.17,
-    );
-    for (let i = 0; i < 9; i++) {
-      const a = i * 2.4;
-      const px = Math.sin(a) * 1.4,
-        py = 3 + Math.sin(i * 7) * 0.7,
-        pz = Math.cos(a) * 1.1;
-      line(
-        group,
-        [
-          [0, 1.7, 0],
-          [px * 0.5, 2.5, pz * 0.5],
-          [px, py, pz],
-        ],
-        "#6b4b71",
-        0.06,
-      );
-      ball(
-        group,
-        mat(["#f3b4d1", "#e5a0c7", "#ffd0e0"][i % 3]),
-        px,
-        py,
-        pz,
-        0.9,
-        0.55,
-        0.75,
-      );
-    }
+    this.stage = buildArenaStage(this.scene, this.software, {
+      mat, glow, mesh, ball, box, cylinder, ring, line,
+    });
+    this.drones = this.stage.drones;
+    this.petals = this.stage.petals;
   }
   setFighters(configs) {
     if (this.fighters)
@@ -509,6 +242,7 @@ export class FightScene {
     const target = this.fighters[side];
     const ultimate = event.action === "ultimate";
     const blocked = event.outcome === "block";
+    this.stage.react(blocked ? 0.2 : ultimate ? 1.4 : 0.45);
     const count = blocked ? 9 : ultimate ? 30 : event.action === "heavy" ? 20 : 12;
     const color = blocked ? "#a6efff" : "#ffe9ac";
     x += side ? -0.45 : 0.45;
@@ -553,6 +287,7 @@ export class FightScene {
     const t = this.time,
       pose = this.pose;
     const positions = pose ? combatPositions(pose.previous, pose.beat, pose.progress) : null;
+    this.stage.update(t, dt);
     this.fighters.forEach((f, i) => {
       const action = pose?.beat.actions[i] ?? "idle",
         p = pose?.progress ?? 0;

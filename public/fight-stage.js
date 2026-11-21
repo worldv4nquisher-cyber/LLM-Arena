@@ -1,0 +1,170 @@
+import * as T from "/vendor/three.module.js";
+
+// The venue is independent of the fighters and replay rules. Static geometry is
+// batched by FightScene; the crowd uses five instanced draws on either GPU path.
+export function buildArenaStage(scene, software, h) {
+  const { mat, glow, mesh, ball, box, cylinder, ring, line } = h;
+  const slate = mat("#39364e"), stone = mat("#68556d"),
+    brass = mat("#bd8658", { metalness: 0.55, roughness: 0.35 }),
+    roof = mat("#383c59"), wall = mat("#795773");
+  const sky = document.createElement("canvas");
+  sky.width = 32; sky.height = 512;
+  const skyCtx = sky.getContext("2d"), gradient = skyCtx.createLinearGradient(0, 0, 0, 512);
+  for (const [at, color] of [[0, "#34315f"], [0.36, "#ad6487"], [0.49, "#fa9870"], [0.58, "#edb080"], [1, "#665174"]])
+    gradient.addColorStop(at, color);
+  skyCtx.fillStyle = gradient; skyCtx.fillRect(0, 0, 32, 512);
+  const skyTexture = new T.CanvasTexture(sky); skyTexture.colorSpace = T.SRGBColorSpace;
+  mesh(scene, new T.SphereGeometry(85, 32, 20), new T.MeshBasicMaterial({ map: skyTexture, side: T.BackSide, fog: false }));
+  ball(scene, new T.MeshBasicMaterial({ color: "#ffd1a0" }), -13, 9, -38, 4.3);
+
+  // A baked sunset sheen gives the ring depth even when real-time shadows and
+  // reflections are disabled on a software renderer. No extra render pass.
+  const floor = document.createElement("canvas"); floor.width = floor.height = 512;
+  const ctx = floor.getContext("2d");
+  ctx.fillStyle = "#685667"; ctx.fillRect(0, 0, 512, 512);
+  const sheen = ctx.createRadialGradient(190, 100, 5, 225, 245, 340);
+  sheen.addColorStop(0, "#edb28c"); sheen.addColorStop(0.3, "#ae7e83"); sheen.addColorStop(1, "#4a4664");
+  ctx.fillStyle = sheen; ctx.fillRect(0, 0, 512, 512);
+  for (let y = 0; y < 512; y += 32) {
+    ctx.fillStyle = "#28283b55"; ctx.fillRect(0, y, 512, 2);
+    ctx.fillStyle = "#ffe5b51c"; ctx.fillRect(0, y + 2, 512, 1);
+    for (let x = (y % 64 ? 32 : 0); x < 512; x += 64) ctx.fillRect(x, y, 1, 32);
+  }
+  const floorTexture = new T.CanvasTexture(floor); floorTexture.colorSpace = T.SRGBColorSpace;
+  cylinder(scene, slate, 0, -0.6, 0, 5.65, 5.9, 0.55, 80);
+  cylinder(scene, brass, 0, -0.28, 0, 5.55, 5.65, 0.12, 80);
+  cylinder(scene, stone, 0, -0.15, 0, 5.45, 5.55, 0.2, 80);
+  const surface = mesh(scene, new T.CircleGeometry(5.4, 96), mat("#ffffff", { map: floorTexture, roughness: 0.3, metalness: 0.25 }), 0, -0.035, 0);
+  surface.rotation.x = -Math.PI / 2;
+  ring(scene, "#65d7ed", 5.42, -0.1, 0.04);
+  ring(scene, "#f0c49b", 5.2, -0.025, 0.02);
+  ring(scene, "#69b7d1", 4.65, -0.022, 0.014);
+  ring(scene, "#78b3c4", 1.8, -0.02, 0.012);
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6;
+    const inset = box(scene, brass, Math.sin(a) * 4.92, -0.015, Math.cos(a) * 4.92, 0.16, 0.012, 0.34);
+    inset.rotation.y = a;
+  }
+  // A star inlay replaces the raised, pale emblem that hid contact shadows.
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    const inlay = box(scene, brass, Math.sin(a) * 0.52, -0.019, Math.cos(a) * 0.52, 0.04, 0.012, 1);
+    inlay.rotation.y = a;
+  }
+  cylinder(scene, slate, 0, -1.2, -1, 15, 14.5, 0.7, 80);
+
+  // Radial sectors keep terrace floors, audience feet and rails aligned.
+  function arc(radius, y, thickness, material, tube = 0.035) {
+    const points = [];
+    for (let j = 0; j <= 80; j++) {
+      const a = -2.05 + j / 80 * 4.1;
+      points.push(new T.Vector3(Math.sin(a) * radius, y, -Math.cos(a) * radius - 0.6));
+    }
+    return mesh(scene, new T.TubeGeometry(new T.CatmullRomCurve3(points), 80, tube, thickness, false), material);
+  }
+  const spectators = [];
+  for (let tier = 0; tier < 3; tier++) {
+    const radius = 8 + tier * 1.25, level = -0.25 + tier * 0.85;
+    const shape = new T.Shape();
+    for (let j = 0; j <= 80; j++) {
+      const a = -2.05 + j / 80 * 4.1, x = Math.sin(a) * (radius + 0.6), z = -Math.cos(a) * (radius + 0.6) - 0.6;
+      if (!j) shape.moveTo(x, -z); else shape.lineTo(x, -z);
+    }
+    for (let j = 80; j >= 0; j--) {
+      const a = -2.05 + j / 80 * 4.1;
+      shape.lineTo(Math.sin(a) * (radius - 0.6), Math.cos(a) * (radius - 0.6) + 0.6);
+    }
+    const terrace = mesh(scene, new T.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false }), tier % 2 ? stone : slate, 0, level - 0.5, 0);
+    terrace.rotation.x = -Math.PI / 2;
+    arc(radius - 0.55, level + 0.24, 5, brass);
+    arc(radius - 0.55, level - 0.02, 5, brass, 0.018);
+    for (let j = 0; j < 60; j++) {
+      const a = -2 + j / 59 * 4;
+      const r = radius + Math.sin(j * 9 + tier) * 0.16;
+      spectators.push({ x: Math.sin(a) * r, z: -Math.cos(a) * r - 0.6, y: level, a, height: 0.36 + (Math.sin(j * 27 + tier) + 1) * 0.09 });
+      if (j % 4 === 0) cylinder(scene, brass, Math.sin(a) * (radius - 0.55), level + 0.1, -Math.cos(a) * (radius - 0.55) - 0.6, 0.025, 0.025, 0.65, 6);
+    }
+  }
+  const count = spectators.length;
+  function instances(geometry, material, n) {
+    const objects = new T.InstancedMesh(geometry, material, n);
+    objects.userData.dynamic = true; scene.add(objects); return objects;
+  }
+  const bodies = instances(new T.CylinderGeometry(0.095, 0.17, 1, 6), mat("#ffffff"), count),
+    heads = instances(new T.SphereGeometry(0.12, 8, 6), mat("#ffffff"), count),
+    hair = instances(new T.SphereGeometry(0.125, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.54), mat("#40334e"), count),
+    arms = instances(new T.CylinderGeometry(0.035, 0.045, 0.28, 5), mat("#b698a4"), count * 2),
+    sticks = instances(new T.BoxGeometry(0.025, 0.24, 0.025), glow("#89e0eb"), count);
+  const dummy = new T.Object3D(), palette = ["#58649d", "#ab617f", "#499393", "#be8d5e", "#7965a2", "#b4a3bb"];
+  spectators.forEach((p, i) => {
+    dummy.position.set(p.x, p.y + p.height / 2, p.z); dummy.scale.set(1, p.height, 1); dummy.updateMatrix(); bodies.setMatrixAt(i, dummy.matrix);
+    bodies.setColorAt(i, new T.Color(palette[(i * 7 + Math.floor(i / 5)) % palette.length]));
+    dummy.position.y = p.y + p.height + 0.1; dummy.scale.setScalar(1); dummy.updateMatrix(); heads.setMatrixAt(i, dummy.matrix);
+    heads.setColorAt(i, new T.Color(["#e8bea5", "#b78674", "#d9a88c"][i % 3]));
+    dummy.position.y += 0.035; dummy.updateMatrix(); hair.setMatrixAt(i, dummy.matrix);
+  });
+
+  // Lantern/banner towers frame the fighters instead of filling the skyline.
+  for (const x of [-6.8, 6.8]) {
+    const z = -3.8;
+    cylinder(scene, slate, x, -0.35, z, 0.65, 0.9, 0.5, 6);
+    for (const dx of [-0.45, 0.45]) cylinder(scene, brass, x + dx, 1.9, z, 0.045, 0.055, 4.4, 8);
+    box(scene, mat("#32627d", { emissive: "#235c85", emissiveIntensity: 0.3 }), x, 1.9, z, 0.72, 2.7, 0.06);
+    for (const dx of [-0.36, 0.36]) box(scene, glow("#73cddd"), x + dx, 1.9, z + 0.05, 0.023, 2.7, 0.02);
+    const symbol = mesh(scene, new T.TorusGeometry(0.22, 0.035, 6, 20), glow("#9ddbea"), x, 1.9, z + 0.06);
+    symbol.rotation.z = Math.PI / 4;
+    for (const y of [0.52, 3.3, 3.65, 4.4]) box(scene, brass, x, y, z, 1.1, 0.09, 0.9);
+    box(scene, glow("#ffbe76"), x, 3.99, z, 0.63, 0.65, 0.58);
+    for (const dx of [-0.36, 0.36]) for (const dz of [-0.33, 0.33]) box(scene, brass, x + dx, 3.99, z + dz, 0.06, 0.68, 0.06);
+    const cap = mesh(scene, new T.ConeGeometry(0.9, 0.45, 4), roof, x, 4.65, z); cap.rotation.y = Math.PI / 4;
+  }
+  for (const [x, z, size] of [[-16, -25, 1.25], [-8, -23, 1.3], [0, -30, 2.15], [9, -27, 1.6], [18, -32, 1.5], [-24, -38, 1.6]]) {
+    const building = new T.Group(); building.position.set(x, -1, z); building.scale.setScalar(size); scene.add(building);
+    for (let level = 0; level < 4; level++) {
+      const w = 3 - level * 0.45, y = level * 1.35;
+      box(building, wall, 0, y + 0.5, 0, w, 1.25, w);
+      for (let j = -1; j <= 1; j++) box(building, glow("#e9a16e"), j * w * 0.27, y + 0.55, w / 2 + 0.01, 0.16, 0.46, 0.02);
+      const cap = mesh(building, new T.ConeGeometry(w * 1.04, 0.64, 4), roof, 0, y + 1.32, 0); cap.rotation.y = Math.PI / 4;
+      box(building, brass, 0, y + 1.04, w * 0.64, w * 1.45, 0.045, 0.055);
+    }
+    cylinder(building, brass, 0, 5.6, 0, 0.025, 0.08, 0.85, 6);
+  }
+  // Blossom clusters use low-poly geometry; layered pinks remain legible at dusk.
+  for (const [x, z, scale] of [[-8.8, -5, 1], [8.7, -7, 1.1], [-13, -13, 1.3], [13, -17, 1.3]]) {
+    const tree = new T.Group(); tree.position.set(x, 0, z); tree.scale.setScalar(scale); scene.add(tree);
+    line(tree, [[0, -0.7, 0], [0.12, 1.4, 0], [-0.3, 2.8, 0], [0.1, 3.8, 0]], "#553a50", 0.16);
+    for (let i = 0; i < 11; i++) {
+      const a = i * 2.4, px = Math.sin(a) * 1.45, py = 3.3 + Math.sin(i * 7) * 0.65, pz = Math.cos(a) * 1.1;
+      line(tree, [[0, 1.7, 0], [px * 0.5, 2.5, pz * 0.5], [px, py, pz]], "#553a50", 0.055);
+      const blossom = mesh(tree, new T.IcosahedronGeometry(1, 1), mat(["#c96c9b", "#df91b3", "#edb1c7"][i % 3]), px, py, pz); blossom.scale.set(0.95, 0.52, 0.8);
+    }
+  }
+  const drones = [];
+  for (const side of [-1, 1]) {
+    const drone = new T.Group(); drone.userData.dynamic = true; drone.position.set(side * 5.3, 5, -3); scene.add(drone);
+    ball(drone, slate, 0, 0, 0, 0.32, 0.18, 0.22); ball(drone, glow("#89d9ee"), 0, 0, 0.2, 0.1);
+    for (const dx of [-0.48, 0.48]) { const rotor = mesh(drone, new T.TorusGeometry(0.27, 0.022, 6, 24), glow("#8cc9e0"), dx, 0.12, 0); rotor.rotation.x = Math.PI / 2; box(drone, slate, dx * 0.6, 0, 0, 0.4, 0.04, 0.05); }
+    drones.push(drone);
+  }
+  const petals = [], petalGeo = new T.SphereGeometry(1, 5, 3), petalMat = mat("#eea1bf");
+  for (let i = 0; i < (software ? 18 : 36); i++) { const p = mesh(scene, petalGeo, petalMat, Math.sin(i * 17) * 11, 1 + i % 11 * 0.6, Math.cos(i * 31) * 9); p.userData.dynamic = true; p.scale.set(0.055, 0.012, 0.035); petals.push(p); }
+  let excitement = 0, lastUpdate = -1;
+  return {
+    drones, petals,
+    react(strength = 1) { excitement = Math.max(excitement, strength); },
+    update(t, dt) {
+      excitement = Math.max(0, excitement - dt * 0.4);
+      if (t - lastUpdate < 0.1) return; lastUpdate = t;
+      spectators.forEach((p, i) => {
+        const cheering = (i % 7 === 0 ? 0.28 : 0) + excitement;
+        for (const side of [-1, 1]) {
+          dummy.position.set(p.x + side * 0.16, p.y + p.height * 0.72 + cheering * 0.12, p.z + 0.03);
+          dummy.scale.setScalar(1); dummy.rotation.set(0, -p.a, side * (0.18 + cheering * (1.4 + Math.sin(t * 5 + i) * 0.35))); dummy.updateMatrix(); arms.setMatrixAt(i * 2 + (side + 1) / 2, dummy.matrix);
+        }
+        dummy.position.set(p.x + 0.22, p.y + p.height + 0.24 + cheering * 0.2, p.z);
+        dummy.rotation.set(0, 0, 0.25 + Math.sin(t * 3 + i) * cheering * 0.6); dummy.scale.setScalar(i % 6 === 0 ? 1 : 0); dummy.updateMatrix(); sticks.setMatrixAt(i, dummy.matrix);
+      });
+      arms.instanceMatrix.needsUpdate = sticks.instanceMatrix.needsUpdate = true;
+    },
+  };
+}
