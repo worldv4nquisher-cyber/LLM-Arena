@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { simulateFight } from "../public/fight-engine.js";
-import { buildBroadcast, broadcastAt, isKeyHit, roundCall } from "../public/fight-broadcast.js";
+import { buildBroadcast, broadcastAt, isKeyHit, roundCall, entranceStatus } from "../public/fight-broadcast.js";
+
+test('entrance status clears prior clock, range and feed for replay and swapped drafts',()=>{
+  for(const sides of [[0,1],[1,0]]) {
+    const previous={clock:11,roundLabel:'ROUND 02',rangeLabel:'近',feedCounter:'FINAL'};
+    assert.deepEqual({...previous,...entranceStatus({sides,rounds:[{round:1}]})},{clock:30,roundLabel:'ROUND 01',rangeLabel:'远',feedCounter:'ENTRANCE'});
+  }
+  assert.equal(entranceStatus({rounds:[{round:2}]}).roundLabel,'ROUND 02');
+  assert.equal(entranceStatus({rounds:[]}).roundLabel,'ROUND 01');
+});
 
 test("broadcast stages each fighter and every countdown without changing replay results", () => {
   const replay = simulateFight({ players: ["gpt", "claude"], seed: 374849025 });

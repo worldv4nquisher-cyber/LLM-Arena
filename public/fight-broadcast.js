@@ -1,9 +1,14 @@
 // Presentation time is separate from the deterministic simulation. Replaying or
 // changing speed must never change a hit, the round score, or the winner.
-import { eventTarget } from './strategy-rules.js';
+import { eventTarget, createState, bands } from './strategy-rules.js';
 const slowStart = 0.23;
 const slowEnd = 0.7;
 const slowRate = 0.28;
+
+export function entranceStatus(game) {
+  const cells=createState().fighters.map(f=>f.cell);
+  return {clock:30,roundLabel:`ROUND ${String(game.rounds[0]?.round??1).padStart(2,'0')}`,rangeLabel:{near:'近',mid:'中',far:'远'}[bands(cells[1]-cells[0])],feedCounter:'ENTRANCE'};
+}
 
 export function isKeyHit(beat) {
   return beat.events.some(

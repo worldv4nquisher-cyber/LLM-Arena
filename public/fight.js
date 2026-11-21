@@ -1,6 +1,6 @@
 import { fighters } from './fight-engine.js';
 import { baseMoves, movePool, ultimates, eventTarget } from './strategy-rules.js';
-import { buildBroadcast, broadcastAt, roundCall } from './fight-broadcast.js';
+import { buildBroadcast, broadcastAt, roundCall, entranceStatus } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
 
@@ -66,9 +66,14 @@ function reviewCard(round) {
   const card=$('review-card'),columns=node('div',undefined,'strategy-columns');card.replaceChildren(node('h3',`回合复盘 · ${roundCall(round)}`));
   round.reviews.forEach((r,i)=>{const col=node('div');col.append(node('h4',config(i).name),node('p',r.notes));columns.append(col);});card.append(columns);
 }
+function resetEntrance(game) {
+  const status=entranceStatus(game);
+  $('clock').textContent=status.clock;$('round-label').textContent=status.roundLabel;$('range-band').textContent=status.rangeLabel;$('feed-counter').textContent=status.feedCounter;
+}
 function begin() {
   timeline=buildBroadcast(replay);cues=playbackCues(timeline);elapsed=0;playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
   scene.resetPose();scene.paused=false;$('series-results').hidden=true;$('battle-feed').replaceChildren();$('pause').disabled=false;$('pause').textContent='Ⅱ 暂停';$('replay').disabled=false;$('start').textContent='↻ 重新开赛';lock(true);
+  resetEntrance(replay.games[0]);
 }
 function historyControls() {document.querySelectorAll('.history-replay').forEach(e=>e.disabled=loading||!scene);}
 async function startMatch(seed) {
@@ -145,7 +150,7 @@ function frame(now) {
       const phaseKey=`${currentGame}-${shot.type}-${shot.round?.round}-${shot.player}`;
       if(shot.type==='entrance'){
         scene.pose=null;scene.presentation=shot;
-        if(lastPhase!==phaseKey){lastPhase=phaseKey;const f=config(shot.player);announce(`${currentGame?'换边 · ':''}${f.name} 登场`,`${f.title} · ${replay.controllers[shot.game.sides[shot.player]]}`,'DRAFT / ENTRANCE','entrance');$('broadcast-state').textContent='赛前选招';$('commentary').textContent='双方禁招后同时选招，自创招须通过10点预算校验。';}
+        if(lastPhase!==phaseKey){lastPhase=phaseKey;resetEntrance(shot.game);const f=config(shot.player);announce(`${currentGame?'换边 · ':''}${f.name} 登场`,`${f.title} · ${replay.controllers[shot.game.sides[shot.player]]}`,'DRAFT / ENTRANCE','entrance');$('broadcast-state').textContent='赛前选招';$('commentary').textContent='双方禁招后同时选招，自创招须通过10点预算校验。';}
       }else{
         const {round}=shot;$('round-label').textContent=`ROUND ${String(round.round).padStart(2,'0')}`;const wins=round.round>1?shot.game.rounds[round.round-2].wins:[0,0];
         if(shot.type==='countdown'){
