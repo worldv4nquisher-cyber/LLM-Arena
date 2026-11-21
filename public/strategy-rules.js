@@ -81,7 +81,11 @@ export function resolveTurn(input, submissions, rng = seededRng(1)) {
   const startup=moves.map((m,i)=>m.startup+fs[i].lag);
   const oldCells=fs.map(f=>f.cell);
   const desired=moves.map((m,i)=>Math.max(0,Math.min(8,oldCells[i]+(i===0?1:-1)*(m.step||0))));
-  if(desired[0]>=desired[1]) { const center=(oldCells[0]+oldCells[1])/2; desired[0]=Math.floor(center-.5); desired[1]=desired[0]+1; }
+  if(desired[0]>=desired[1]) {
+    if(!moves[0].step) desired[1]=oldCells[0]+1;
+    else if(!moves[1].step) desired[0]=oldCells[1]-1;
+    else {const center=(oldCells[0]+oldCells[1])/2;desired[0]=Math.floor(center-.5);desired[1]=desired[0]+1;}
+  }
   fs.forEach((f,i)=>{ f.cell=desired[i]; f.stamina-=moves[i].stamina; f.energy-=moves[i].energy; });
   const band=bands(fs[1].cell-fs[0].cell);
   // Lunge's range is evaluated at submission distance; other attacks use final positions.
