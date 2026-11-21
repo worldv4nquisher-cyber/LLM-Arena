@@ -28,14 +28,29 @@
   background: linear-gradient(90deg, transparent, #20192edb, transparent);
 }
 .announcement.result {
-  inset: auto 5% 125px;
-  padding: 16px 12px;
+  inset: auto 5% 112px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  text-align: left;
   backdrop-filter: none;
   background: #241b34e6;
+}
+.announcement.result small {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  letter-spacing: 3px;
 }
 .announcement.result strong {
   font-size: clamp(22px, 2.6vw, 32px);
   letter-spacing: 2px;
+  margin: 0;
+}
+.announcement.result > span {
+  white-space: nowrap;
 }
 .broadcast-highlight {
   position: absolute;
@@ -69,6 +84,14 @@
   .announcement[data-kind="entrance"] small {
     font-size: 8px;
     letter-spacing: 1px;
+  }
+  .announcement.result {
+    padding: 10px;
+    gap: 6px;
+  }
+  .announcement.result strong {
+    font-size: 20px;
+    letter-spacing: 0;
   }
   .broadcast-highlight {
     top: 148px;

@@ -331,7 +331,7 @@ function finish() {
       : `${config(replay.winner).name} 获胜`;
   announce(
     title,
-    `${replay.wins[0]} : ${replay.wins[1]}  ·  可重播本场，或换位选手再战`,
+    `${replay.wins[0]} : ${replay.wins[1]}  ·  三局两胜`,
     "MATCH COMPLETE",
     true,
   );
