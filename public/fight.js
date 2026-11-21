@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id), audio = new ArenaAudio();
 const players = [$('player-0'),$('player-1')], controls = [$('controller-0'),$('controller-1')];
 const symbols = {gpt:'✧',claude:'✺',gemini:'✦',deepseek:'≋',grok:'♆'}, ranges = {near:'近',mid:'中',far:'远'};
 const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map(m=>[m.id,m.name]));
-const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
+const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
 const fighter = id => fighters.find(f=>f.id===id);
 let scene, replay, timeline, controllers=[], history=[], elapsed=0, playing=false, loading=false, finished=false;
 let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[];
@@ -109,7 +109,7 @@ const controllerLabel = id => controllers.find(c=>c.id===id)?.label||id;
 function resultTable() {
   const panel=$('series-results'),winner=replay.series.winner;
   panel.replaceChildren(node('h2',winner===null?'系列赛平局':`${fighter(replay.players[winner]).name} 赢得系列赛`),node('p',`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛 · SEED ${replay.seed}`,'card-kicker'));
-  const scroll=node('div',undefined,'table-scroll');scroll.append(table(['选手 / 控制器','胜局','失误率','预判命中率','佯攻成功率','回合间提升'],replay.series.stats.map((s,i)=>[`${fighter(replay.players[i]).name} / ${controllerLabel(replay.controllers[i])}`,replay.series.wins[i],pct(s.mistakeRate),pct(s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));panel.append(scroll);panel.hidden=false;
+  const scroll=node('div',undefined,'table-scroll');scroll.append(table(['选手 / 控制器','胜局','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],replay.series.stats.map((s,i)=>[`${fighter(replay.players[i]).name} / ${controllerLabel(replay.controllers[i])}`,replay.series.wins[i],pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));panel.append(scroll);panel.hidden=false;
 }
 function finish() {
   finished=true;playing=false;lock(false);$('pause').disabled=true;$('broadcast-state').textContent='系列赛结束';$('feed-counter').textContent='FINAL';
@@ -172,7 +172,7 @@ $('sound').addEventListener('click',async()=>{try{const enabled=await audio.togg
 document.addEventListener('keydown',event=>{if(event.repeat||event.altKey||event.ctrlKey||event.metaKey||['INPUT','SELECT','TEXTAREA','BUTTON','A'].includes(event.target.tagName))return;if(event.code==='Space'){event.preventDefault();$('pause').click();}if(event.key.toLowerCase()==='r')$('replay').click();if(['1','2','3'].includes(event.key))document.querySelectorAll('[data-camera]')[Number(event.key)-1].click();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing)$('pause').click();});
 async function refreshLadder(){
-  try{const rows=await json('/api/ladder');$('ladder-table').replaceChildren(table(['控制器','场 / 胜 / 负 / 平','胜率','失误率','预判命中率','佯攻成功率','回合间提升'],rows.map(s=>[controllerLabel(s.id),`${s.games} / ${s.wins} / ${s.losses} / ${s.draws}`,pct(s.winRate),pct(s.mistakeRate),pct(s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));$('ladder-status').textContent=rows.length?'能力统计按累计决策次数加权 · 回合间提升为百分点变化':'暂无战绩。完成一场比赛，或运行内置天梯。';}catch(error){$('ladder-status').textContent=error.message;}
+  try{const rows=await json('/api/ladder');$('ladder-table').replaceChildren(table(['控制器','场 / 胜 / 负 / 平','胜率','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],rows.map(s=>[controllerLabel(s.id),`${s.games} / ${s.wins} / ${s.losses} / ${s.draws}`,pct(s.winRate),pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));$('ladder-status').textContent=rows.length?'能力统计按累计决策次数加权 · 回合间提升为百分点变化':'暂无战绩。完成一场比赛，或运行内置天梯。';}catch(error){$('ladder-status').textContent=error.message;}
 }
 $('run-ladder').addEventListener('click',async()=>{ $('run-ladder').disabled=true;try{$('ladder-status').textContent='后台计算中 · 内置天梯';const {id}=await post('/api/ladder/run',{games:2});await poll(`/api/ladder/run/${id}`,p=>{$('ladder-status').textContent=`后台计算中 · 天梯 ${p.completed||0}/${p.total||10} 组 · 第${p.game||1}局 第${p.round||1}回合`;});await refreshLadder();}catch(error){$('ladder-status').textContent=error.message;}finally{$('run-ladder').disabled=false;} });
 try{const saved=JSON.parse(localStorage.getItem('celestial-strategy-matches')||'[]');if(Array.isArray(saved))history=saved.filter(m=>m&&Array.isArray(m.players)&&m.players.length===2&&m.players.every(id=>fighter(id))&&Array.isArray(m.wins)&&m.wins.length===2&&Array.isArray(m.controllers)&&m.controllers.length===2&&Number.isSafeInteger(m.seed)).slice(0,8);}catch{/* Ignore damaged local history. */}

@@ -1,4 +1,4 @@
-import {seededRng,defaultCustom} from './public/strategy-rules.js';
+import {seededRng,defaultCustom,moveCategory} from './public/strategy-rules.js';
 import {ModelError} from './opponents.js';
 
 export const personalities=['gpt','claude','gemini','deepseek','grok'];
@@ -23,8 +23,8 @@ export function createBuiltinController(id, {seed=1}={}) {
       if(v.turnsLeft<13&&v.you.hp>v.opponent.hp+8&&rng()<(id==='deepseek'?.85:.35)) choose('step_back','血量领先，拉开距离守住优势');
       if(v.you.stamina<20) choose('rest','体力不足，休息等待反击');
       if(v.turn===2 && ['deepseek','gpt'].includes(id)) choose('scout','先侦察底牌，再制定攻势');
-      if(['guard','parry','evade','barrier'].includes(predict)) {
-        if(v.reviewNotes.some(n=>n.adjust==='punish-defense')) choose('throw','复盘发现防守习惯，优先投技破防');
+      if(moveCategory(predict)==='defend') {
+        if(v.reviewNotes.some(n=>n.adjust==='punish-defense')&&v.you.energy>=50) choose('throw','能量充足，复盘后用投技惩罚防守');
         if(rng()<.55) choose('throw','预判对手防守，用投技破防');
         if(rng()<.65) choose('feint','对手偏爱防守，佯攻诱出破绽');
       }
@@ -85,7 +85,7 @@ export function liveController(id,model,{request=fetch}={}) {
   async function ask(method,view) {
     const quick=method==='decide'&&view.you?.budgetLeft===0;
     const schema=method==='decide'?'{"move":"legal move id","reason":"中文一句话，最多40字","predict":"opponent move id or category","plan":[{"if":"always|opponent_guarded|hit|missed|was_hit|near|mid|far","then":"move id"}]}':method==='review'?'{"notes":"中文复盘一句话","adjust":"strategy adjustment"}':view.phase==='ban'?'{"ban":"pool move id"}':'{"picks":["four distinct available pool ids"],"ultimate":"one ultimate id","custom":{"name":"中文名","damage":2,"range":["near","mid"],"speed":3},"reason":"中文一句话"}';
-    const prompt=[quick?'快速决策 Quick turn: choose ONLY a legal quick move. Reply terse JSON.':`策略格斗：${view.rulesSummary||'同时出招，投技破防，快招打断慢招，侦察揭示底牌。'}\n${englishRules}`,`Phase: ${method}${view.phase?`/${view.phase}`:''}`,`Required JSON schema (plan optional, max 3): ${schema}`,`View JSON: ${JSON.stringify(view)}`].join('\n');
+    const prompt=[quick?'快速决策 Quick turn: choose ONLY a legal quick move. Reply terse JSON.':`策略格斗：${view.rulesSummary||'同时出招，投技破防，快招打断慢招，侦察揭示底牌。'}\n${englishRules}`,`Phase: ${method}${view.phase?`/${view.phase}`:''}`,`Required JSON schema (plan optional, max 3): ${schema}`, 'Prediction categories: attack/throw/defend/move/feint/scout/rest; defend includes guard/parry/evade/barrier.',`View JSON: ${JSON.stringify(view)}`].join('\n');
     const openai=model.provider==='openai',ms=Math.min(model.timeout??30000,quick?5000:15000),signal=AbortSignal.timeout(ms);
     let response,data;
     try {

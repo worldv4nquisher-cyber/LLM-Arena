@@ -33,6 +33,10 @@ export const ultimates = [
   move('prison','瞬狱','attack',['near'],20,28,1,3,'ultimate',{energy:100}),
 ];
 export const defaultCustom = {name:'星拳',damage:2,range:['near','mid'],speed:4};
+export function moveCategory(id) {
+  const kind=id==='custom'?'attack':[...baseMoves,...movePool,...ultimates].find(m=>m.id===id)?.kind;
+  return ['guard','parry','evade'].includes(kind)?'defend':kind;
+}
 export function validateCustom(input) {
   const c = input;
   const valid = c && typeof c.name === 'string' && c.name.length > 0 && c.name.length <= 16 && Number.isInteger(c.damage) && c.damage >= 0 && Number.isInteger(c.speed) && c.speed >= 0 && c.speed <= 4 && Array.isArray(c.range) && c.range.includes('near') && new Set(c.range).size === c.range.length && c.range.every(r => all.includes(r)) && 2*c.damage + c.speed + (c.range.includes('mid') ? 2 : 0) + (c.range.includes('far') ? 3 : 0) <= 10;

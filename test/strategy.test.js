@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createState,resolveTurn,makeView,legalMoves,validateCustom,seededRng,movePool,ultimates} from '../public/strategy-rules.js';
+import {createState,resolveTurn,makeView,legalMoves,validateCustom,seededRng,movePool,ultimates,moveCategory} from '../public/strategy-rules.js';
 import {runSeries} from '../fight-match.js';
 import {createBuiltinController,personalities} from '../fight-controllers.js';
 
@@ -76,19 +76,58 @@ test('plans save controller calls; depleted budget only exposes quick moves',asy
   const r=await runSeries({players:['a','b'],controllers:[c,scripted(async()=>({move:'rest',reason:'恢复体力'}))],games:1});
   const s=r.games[0].stats[0];assert.equal(s.planTurns,48);assert.equal(calls,42);assert.ok(quick>0);assert.equal(s.budgetUsed,24);
 });
+test('exact and category predictions score ids, categories, absent and wrong guesses independently',async()=>{
+  for(const [predict,exact,category] of [['guard',1,1],['parry',0,1],['defend',0,1],['attack',0,0],['invented',0,0],[undefined,0,0]]) {
+    const r=await runSeries({players:['a','b'],controllers:[scripted(async()=>({move:'rest',reason:'观察',predict})),scripted(async()=>({move:'guard',reason:'防守'}))],games:1});
+    const s=r.games[0].stats[0];
+    assert.equal(s.predictionExactHitRate,exact);assert.equal(s.predictionCategoryHitRate,category);assert.equal(s.predictionHitRate,category);
+    assert.equal(s.predictions,predict?r.games[0].rounds.reduce((n,r)=>n+r.beats.length,0):0);
+  }
+  for(const [id,category] of [['strike','attack'],['custom','attack'],['throw','throw'],['evade','defend'],['barrier','defend'],['dash','move'],['feint','feint'],['scout','scout'],['rest','rest'],['invented',undefined]])assert.equal(moveCategory(id),category);
+});
+test('round improvement uses each controller own round data, including swapped games',async()=>{
+  const r=await runSeries({players:['a','b'],controllers:[scripted(async v=>({move:'rest',reason:'观察',predict:v.round===1?'guard':'rest'})),scripted(async()=>({move:'rest',reason:'观察',predict:'guard'}))],games:2});
+  for(const g of r.games){
+    const a=g.stats[g.sides.indexOf(0)],b=g.stats[g.sides.indexOf(1)];
+    assert.equal(a.rounds[0].predictionRate,0);assert.equal(a.rounds[1].predictionRate,1);
+    assert.equal(a.betweenRoundImprovement[0].predictionRate,1);
+    assert.ok(b.rounds.every(s=>s.predictionRate===0));assert.ok(b.betweenRoundImprovement.every(s=>s.predictionRate===0));
+  }
+  assert.ok(r.series.stats[0].betweenRoundImprovement.some(s=>s.predictionRate===1));
+  assert.ok(r.series.stats[1].betweenRoundImprovement.every(s=>s.predictionRate===0));
+});
+test('plan reasons identify the executed conditional step',async()=>{
+  const c=scripted(async()=>({move:'guard',reason:'等待时机',plan:[{if:'always',then:'rest'},{if:'opponent_guarded',then:'guard'}]}));
+  const r=await runSeries({players:['a','b'],controllers:[c,scripted(async()=>({move:'guard',reason:'防守'}))],games:1});
+  const beats=r.games[0].rounds[0].beats;
+  assert.equal(beats[0].planSteps[0],null);assert.equal(beats[1].reasons[0],'连招第1步：若无条件→休息');
+  assert.equal(beats[2].reasons[0],'连招第2步：若对手格挡→格挡');assert.equal(beats[2].planSteps[0],2);
+});
+test('built-ins retain feints against repeated defense after review',async()=>{
+  const view=makeView(state(),0,{turnsLeft:26,recentMoves:['guard','guard','guard','parry','strike'].map(m=>({moves:['rest',m],events:[]})),reviewNotes:[{adjust:'punish-defense'}]});
+  view.you.energy=20;
+  const choices=await Promise.all(Array.from({length:40},(_,seed)=>createBuiltinController('gpt',{seed}).decide(view)));
+  assert.ok(choices.some(c=>c.move==='feint'));assert.ok(choices.some(c=>c.move==='throw'));
+});
 test('200-game seeded built-in round robin is varied and decisive',async()=>{
   const wins=Object.fromEntries(personalities.map(id=>[id,0])),endings={},moves={},finishes={},lengths=[];
+  const ability={predictions:0,exact:0,category:0,feints:0,successfulFeints:0},predicted={},actual={};
   for(let seed=0;seed<10;seed++)for(let a=0;a<5;a++)for(let b=a+1;b<5;b++) {
     const ids=[personalities[a],personalities[b]];
     const r=await runSeries({players:ids,controllers:ids.map(id=>createBuiltinController(id,{seed})),games:2,seed});
     for(const g of r.games){if(g.winner!==null)wins[ids[g.sides[g.winner]]]++;
+      for(const s of g.stats){ability.predictions+=s.predictions;ability.exact+=s.predictionsExactCorrect;ability.category+=s.predictionsCorrect;ability.feints+=s.feintsAttempted;ability.successfulFeints+=s.feintsSuccessful;}
       for(const round of g.rounds){endings[round.ending]=(endings[round.ending]||0)+1;lengths.push(round.beats.length);
         for(const beat of round.beats)for(const m of beat.moves)moves[m]=(moves[m]||0)+1;
+        for(const beat of round.beats)for(let i=0;i<2;i++)if(beat.predictions[i]){const p=moveCategory(beat.predictions[i])||beat.predictions[i],a=moveCategory(beat.moves[1-i])||'stunned';predicted[p]=(predicted[p]||0)+1;actual[a]=(actual[a]||0)+1;}
         const last=round.beats.at(-1);if(round.winner!==null){const m=last.moves[round.winner];finishes[m]=(finishes[m]||0)+1;}
       }
     }
   }
   console.log('BALANCE',JSON.stringify({wins,endings,moves,finishes}));
+  const chance=Object.entries(predicted).reduce((n,[category,count])=>n+count*(actual[category]||0),0)/ability.predictions**2;
+  console.log('ABILITY',JSON.stringify({...ability,exactRate:ability.exact/ability.predictions,categoryRate:ability.category/ability.predictions,chance}));
+  assert.ok(ability.feints>0);assert.ok(ability.successfulFeints>0);assert.ok(ability.category/ability.predictions>chance+.03);
   assert.ok(Object.values(wins).every(n=>n>0));assert.ok(endings.ko>0);assert.ok(lengths.some(n=>n<12));assert.ok(lengths.some(n=>n>20));assert.ok(Object.keys(moves).length>=12);assert.ok(!moves.stunned);
   assert.ok(Object.values(wins).every(n=>n>=24&&n<=60));
   const totalFinishes=Object.values(finishes).reduce((a,b)=>a+b,0);

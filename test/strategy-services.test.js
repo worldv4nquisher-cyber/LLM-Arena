@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -81,8 +81,14 @@ test('ladder aggregates weighted counters, persists and restores pair memory, to
   const r=await runSeries({...options(['gpt','claude'].map(id=>createBuiltinController(id))),games:2});
   await Promise.all([ladder.record(r),ladder.record(r)]);
   const snapshot=await ladder.snapshot();assert.equal(snapshot.length,2);
-  for(const row of snapshot){assert.equal(row.games,4);assert.equal(row.wins+row.losses+row.draws,4);assert.equal(row.winRate,row.wins/4);const index=r.controllers.indexOf(row.id),stats=r.series.stats[index];assert.equal(row.mistakeRate,stats.mistakeRate);assert.equal(row.predictionHitRate,stats.predictionHitRate);assert.equal(row.feintSuccessRate,stats.feintSuccessRate);}
+  for(const row of snapshot){assert.equal(row.games,4);assert.equal(row.wins+row.losses+row.draws,4);assert.equal(row.winRate,row.wins/4);const index=r.controllers.indexOf(row.id),stats=r.series.stats[index];assert.equal(row.mistakeRate,stats.mistakeRate);assert.equal(row.predictionHitRate,stats.predictionHitRate);assert.equal(row.predictionExactHitRate,stats.predictionExactHitRate);assert.equal(row.predictionCategoryHitRate,stats.predictionCategoryHitRate);assert.equal(row.feintSuccessRate,stats.feintSuccessRate);}
   const restored=createLadder({path});assert.deepEqual(await restored.snapshot(),snapshot);
+  const legacy=JSON.parse(await readFile(path,'utf8'));
+  for(const s of Object.values(legacy.entries))for(const key of ['predictionsScored','predictionsCategoryCorrect','predictionsExactCorrect'])delete s[key];
+  const legacyPath=join(dir,'legacy.json');await writeFile(legacyPath,JSON.stringify(legacy));
+  const migrated=createLadder({path:legacyPath});assert.ok((await migrated.snapshot()).every(s=>s.predictionCategoryHitRate===0&&s.predictionExactHitRate===0));
+  await migrated.record(r);
+  for(const row of await migrated.snapshot()){const s=r.series.stats[r.controllers.indexOf(row.id)];assert.equal(row.predictionCategoryHitRate,s.predictionCategoryHitRate);assert.equal(row.predictionExactHitRate,s.predictionExactHitRate);}
   const memory=await restored.memory(r.controllers);assert.equal(memory.length,4);assert.ok(memory[0].opponentMoveFrequencies);assert.deepEqual(await restored.memory(['x','y']),[]);
   const reversed=await restored.memory([...r.controllers].reverse());assert.deepEqual(reversed[0].sides,memory[0].sides.map(i=>1-i));
   const later=await runSeries({...options(['gpt','claude'].map(id=>createBuiltinController(id))),memory});assert.equal(later.memory.length,1);

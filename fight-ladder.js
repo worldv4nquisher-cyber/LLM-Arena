@@ -2,7 +2,7 @@ import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 
-const empty=()=>({games:0,wins:0,losses:0,draws:0,mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,improvements:0,damageImprovement:0,predictionImprovement:0});
+const empty=()=>({games:0,wins:0,losses:0,draws:0,mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,predictionsScored:0,predictionsCategoryCorrect:0,predictionsExactCorrect:0,feintsSuccessful:0,feintsAttempted:0,improvements:0,damageImprovement:0,predictionImprovement:0});
 const pairKey=ids=>JSON.stringify([...ids].sort());
 export function createLadder({path=new URL('./data/ladder.json',import.meta.url)}={}) {
   let entries={},pairs={},queue=Promise.resolve();
@@ -17,7 +17,7 @@ export function createLadder({path=new URL('./data/ladder.json',import.meta.url)
     } catch {/* In-memory results remain available. */}
   }
   return {
-    async snapshot(){await ready;return Object.entries(entries).map(([id,s])=>({id,games:s.games,wins:s.wins,losses:s.losses,draws:s.draws,winRate:s.wins/Math.max(1,s.games),mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:s.predictionsCorrect/Math.max(1,s.predictions),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted),betweenRoundImprovement:{damageShare:s.damageImprovement/Math.max(1,s.improvements),predictionRate:s.predictionImprovement/Math.max(1,s.improvements)}})).sort((a,b)=>b.winRate-a.winRate||a.id.localeCompare(b.id));},
+    async snapshot(){await ready;return Object.entries(entries).map(([id,s])=>({id,games:s.games,wins:s.wins,losses:s.losses,draws:s.draws,winRate:s.wins/Math.max(1,s.games),mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionCategoryHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionExactHitRate:(s.predictionsExactCorrect||0)/Math.max(1,s.predictionsScored||0),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted),betweenRoundImprovement:{damageShare:s.damageImprovement/Math.max(1,s.improvements),predictionRate:s.predictionImprovement/Math.max(1,s.improvements)}})).sort((a,b)=>b.winRate-a.winRate||a.id.localeCompare(b.id));},
     async memory(ids){await ready;const saved=pairs[pairKey(ids)]||[];return structuredClone(saved.map(s=>({...s,sides:s.controllerSides.map(id=>ids.indexOf(id))})));},
     async record(replay){
       await ready;
@@ -25,6 +25,11 @@ export function createLadder({path=new URL('./data/ladder.json',import.meta.url)
         const id=replay.controllers[game.sides[side]],s=entries[id]??=empty(),t=game.stats[side];
         s.games++;if(game.winner===null)s.draws++;else if(game.winner===side)s.wins++;else s.losses++;
         for(const key of ['mistakes','decisions','predictionsCorrect','predictions','feintsSuccessful','feintsAttempted'])s[key]+=t[key];
+        if(t.predictionCategoryHitRate!==undefined) {
+          s.predictionsScored=(s.predictionsScored||0)+t.predictions;
+          s.predictionsCategoryCorrect=(s.predictionsCategoryCorrect||0)+t.predictionsCorrect;
+          s.predictionsExactCorrect=(s.predictionsExactCorrect||0)+t.predictionsExactCorrect;
+        }
         for(const improvement of t.betweenRoundImprovement){s.improvements++;s.damageImprovement+=improvement.damageShare;s.predictionImprovement+=improvement.predictionRate;}
       }
       const key=pairKey(replay.controllers);

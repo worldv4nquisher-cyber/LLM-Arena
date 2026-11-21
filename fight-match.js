@@ -1,10 +1,12 @@
-import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary} from './public/strategy-rules.js';
+import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary, moveCategory} from './public/strategy-rules.js';
 import {ModelError} from './opponents.js';
 
-const freshStats = () => ({mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,planTurns:0,budgetUsed:0,scouts:0,rounds:[],betweenRoundImprovement:[]});
+const freshStats = () => ({mistakes:0,decisions:0,predictionsCorrect:0,predictionsExactCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,planTurns:0,budgetUsed:0,scouts:0,rounds:[],betweenRoundImprovement:[]});
 function rates(s) {
-  return {...s,mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:s.predictionsCorrect/Math.max(1,s.predictions),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted)};
+  return {...s,mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:s.predictionsCorrect/Math.max(1,s.predictions),predictionCategoryHitRate:s.predictionsCorrect/Math.max(1,s.predictions),predictionExactHitRate:s.predictionsExactCorrect/Math.max(1,s.predictions),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted)};
 }
+const conditionNames={always:'无条件',opponent_guarded:'对手格挡',hit:'上招命中',missed:'上招落空',was_hit:'自身受击',near:'近距',mid:'中距',far:'远距'};
+const moveNames=Object.fromEntries([...baseMoves,...movePool,...ultimates,{id:'custom',name:'自创招'}].map(m=>[m.id,m.name]));
 async function invoke(controller, method, view, deadlines) {
   let timer;
   try {
@@ -64,7 +66,7 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
         const submissions=await Promise.all(cs.map(async(c,i)=>{
           if(plans[i].length) {
             const p=plans[i].shift();
-            if(planMatches(p.if,views[i],beats.at(-1),i)&&views[i].legalMoves.some(m=>m.id===p.then)) {stats[i].planTurns++;return {move:p.then,reason:'按计划把握战机',planDriven:true};}
+            if(planMatches(p.if,views[i],beats.at(-1),i)&&views[i].legalMoves.some(m=>m.id===p.then)) {stats[i].planTurns++;return {move:p.then,reason:`连招第${p.step}步：若${conditionNames[p.if]}→${moveNames[p.then]}`,planDriven:true,planStep:p.step};}
             plans[i]=[];
           }
           stats[i].decisions++;
@@ -72,14 +74,18 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
           if(budgets[i]>0) {budgets[i]--;stats[i].budgetUsed++;}
           const error=call.error||decisionError(call.result,views[i]);
           if(error) {stats[i].mistakes++;return {mistake:error,reason:'判断失误，失去行动机会'};}
-          plans[i]=structuredClone(call.result.plan||[]);
+          plans[i]=(call.result.plan||[]).map((p,index)=>({...p,step:index+1}));
           return call.result;
         }));
         const resolved=resolveTurn(state,submissions,rng);state=resolved.state;
-        const beat={...resolved.beat,reasons:submissions.map(s=>s.reason),predictions:submissions.map(s=>s.predict??null),planDriven:submissions.map(s=>!!s.planDriven),mistakes:submissions.map(s=>s.mistake||null)};
+        const beat={...resolved.beat,reasons:submissions.map(s=>s.reason),predictions:submissions.map(s=>s.predict??null),planDriven:submissions.map(s=>!!s.planDriven),planSteps:submissions.map(s=>s.planStep??null),mistakes:submissions.map(s=>s.mistake||null)};
         for(let i=0;i<2;i++) {
-          const prediction=submissions[i].predict, opponentMove=views[1-i].legalMoves.find(m=>m.id===beat.moves[1-i]);
-          if(prediction) {stats[i].predictions++;if(prediction===beat.moves[1-i]||prediction===opponentMove?.kind) stats[i].predictionsCorrect++;}
+          const prediction=submissions[i].predict,opponentMove=beat.moves[1-i],category=moveCategory(opponentMove);
+          if(prediction) {
+            stats[i].predictions++;
+            if(prediction===opponentMove) stats[i].predictionsExactCorrect++;
+            if(prediction===opponentMove||(category&&(moveCategory(prediction)===category||prediction===category))) stats[i].predictionsCorrect++;
+          }
           if(beat.moves[i]==='feint') {stats[i].feintsAttempted++;if(beat.feints[i]) stats[i].feintsSuccessful++;}
           if(beat.moves[i]==='scout') stats[i].scouts++;
           beat.states[i].budgetLeft=budgets[i];
