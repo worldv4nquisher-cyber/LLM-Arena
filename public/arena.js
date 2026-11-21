@@ -24,6 +24,7 @@ let board;
 let cells;
 let controller;
 let history = readHistory();
+let thinkingTimer;
 
 function readHistory(fallback = []) {
   try {
@@ -192,11 +193,20 @@ async function startMatch() {
     let ended = false;
     for await (const event of matchEvents(response)) {
       switch (event.type) {
-        case 'turn':
+        case 'turn': {
           setTurn(event.player);
-          status(`${playerLabel(event.player, players)} 正在思考`, 'active', event.player);
+          const label = `${playerLabel(event.player, players)} 正在思考`;
+          const since = Date.now();
+          status(label, 'active', event.player);
+          clearInterval(thinkingTimer);
+          if (players[event.player - 1].mode === 'live') thinkingTimer = setInterval(() => {
+            const seconds = Math.floor((Date.now() - since) / 1000);
+            if (seconds >= 3) status(`${label} · ${seconds} 秒`, 'active', event.player);
+          }, 1000);
           break;
+        }
         case 'move':
+          clearInterval(thinkingTimer);
           turns = event.turn;
           addMove(event, players);
           break;
@@ -226,6 +236,7 @@ async function startMatch() {
     status(match.signal.aborted ? '对局已停止' :
       (error instanceof TypeError ? '无法连接竞技场，请重试。' : error.message), 'error');
   } finally {
+    clearInterval(thinkingTimer);
     controller = null;
     start.disabled = false;
     start.querySelector('span').textContent = '再来一局';

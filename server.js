@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { games, newBoard, legalMoves, play } from './public/rules.js';
-import { availableModels, demoMove, liveMove } from './opponents.js';
+import { availableModels, demoMove, liveMove, ModelError } from './opponents.js';
 
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -93,6 +93,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch } = 
     let board = newBoard(game);
     let turn = 0;
     let player = 1;
+    const sides = ['红方', '蓝方'];
     try {
       while (!signal.aborted) {
         const id = input.players[player - 1];
@@ -119,8 +120,14 @@ export function createArena({ env = process.env, turnDelay, request = fetch } = 
         }
         player = 3 - player;
       }
-    } catch {
-      if (!signal.aborted) send({ type: 'error', message: '模型连接失败或超时，本场未计入战绩。' });
+    } catch (error) {
+      if (!signal.aborted) {
+        const model = models[input.players[player - 1]];
+        const reason = error instanceof ModelError ? error.message : '模型连接失败';
+        console.error(`[${model.description ?? model.name}] ${model.name}: ${error.detail ?? error.message}`);
+        send({ type: 'error', player,
+          message: `${sides[player - 1]}「${model.name}」${reason}。本场未计入战绩。` });
+      }
     } finally {
       if (isLive) liveInProgress = false;
       res.end();
