@@ -125,6 +125,16 @@ test("play-by-play follows exchange outcomes and correct player/target sides", (
   assert.equal(describeExchange({events:[]},names),'甲与乙继续试探，暂无伤害。');
 });
 
+test("play-by-play distinguishes throws against attacks and blocks with a barrier", () => {
+  const names=['甲','乙'];
+  const throwBeat={events:[{player:0,action:'heavy',damage:15,outcome:'throw'}]};
+  assert.equal(describeExchange({...throwBeat,moves:['throw','heavy']},names),'甲投技命中，造成15点伤害。');
+  assert.equal(describeExchange({...throwBeat,moves:['throw','guard']},names),'甲投技破防，造成15点伤害。');
+  const projectile={events:[{player:0,action:'blast',damage:0,outcome:'evade'}]};
+  assert.equal(describeExchange({...projectile,moves:['blast','barrier']},names),'乙用屏障挡下了甲的远程攻击。');
+  assert.equal(describeExchange({...projectile,moves:['blast','evade']},names),'乙闪开了甲的攻势。');
+});
+
 test("voice starts muted, uses zh-CN, cancels on mute and degrades to captions", () => {
   const button=()=>Object.assign(new EventTarget(),{setAttribute(key,value){this[key]=value;}});
   const on=button(),calls=[];

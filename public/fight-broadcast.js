@@ -27,13 +27,13 @@ export function isKeyHit(beat) {
 
 export function describeExchange(beat,names) {
   const events=beat.events.flatMap(e=>{
-    const actor=names[e.player],target=names[eventTarget(e)];
+    const side=eventTarget(e),actor=names[e.player],target=names[side],defense=beat.moves?.[side];
     if(e.outcome==='danger')return [`${target}踩中危险区，损失${e.damage}点生命`];
     if(e.outcome==='item')return [`${actor}拾取道具`];
     if(e.outcome==='parry')return [`${actor}招架反击，造成${e.damage}点伤害`];
-    if(e.outcome==='throw')return [`${actor}投技破防，造成${e.damage}点伤害`];
+    if(e.outcome==='throw')return [`${actor}${defense==='guard'?'投技破防':'投技命中'}，造成${e.damage}点伤害`];
     if(e.damage>0)return [`${actor}${e.action==='ultimate'?'绝技命中':e.outcome==='block'?'打在防守上':'出招命中'}，${target}损失${e.damage}点生命`];
-    if(e.outcome==='evade')return [`${target}闪开了${actor}的攻势`];
+    if(e.outcome==='evade')return [defense==='barrier'?`${target}用屏障挡下了${actor}的远程攻击`:`${target}闪开了${actor}的攻势`];
     if(e.outcome==='counter')return [`${target}打断了${actor}的投技`];
     if(e.outcome==='miss')return [`${actor}的攻击落空`];
     return [];
