@@ -9,6 +9,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { createBuiltinController, createFlakyController, personalities, liveController } from './fight-controllers.js';
 import { runSeries } from './fight-match.js';
 import { createLadder } from './fight-ladder.js';
+import { createLeague } from './fight-league.js';
 
 const assets = new Map([
   ['/', ['fight.html', 'text/html; charset=utf-8']],
@@ -23,6 +24,12 @@ const assets = new Map([
   ['/fight-engine.js', ['fight-engine.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.js', ['fight-broadcast.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.css', ['fight-broadcast.css', 'text/css; charset=utf-8']],
+  ['/fighter', ['fighter.html', 'text/html; charset=utf-8']],
+  ['/replays', ['replays.html', 'text/html; charset=utf-8']],
+  ['/league.css', ['league.css', 'text/css; charset=utf-8']],
+  ['/league-ui.js', ['league-ui.js', 'text/javascript; charset=utf-8']],
+  ['/fighter.js', ['fighter.js', 'text/javascript; charset=utf-8']],
+  ['/replays.js', ['replays.js', 'text/javascript; charset=utf-8']],
   ['/vendor/three.module.js', ['../node_modules/three/build/three.module.js', 'text/javascript; charset=utf-8']],
   ['/arena.css', ['arena.css', 'text/css; charset=utf-8']],
   ['/arena.js', ['arena.js', 'text/javascript; charset=utf-8']],
@@ -55,7 +62,7 @@ async function matchInput(req) {
   }
 }
 
-export function createArena({ env = process.env, turnDelay, request = fetch, ladder = createLadder(), deadlines } = {}) {
+export function createArena({ env = process.env, turnDelay, request = fetch, ladder = createLadder(), deadlines, league: leagueOptions } = {}) {
   const models = availableModels(env);
   let liveInProgress = false;
   const controllers = [
@@ -81,8 +88,40 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     const replay=await runSeries({...input,controllers:input.controllers.map(id=>brain(id,input.seed)),memory:await ladder.memory(input.controllers),deadlines,onProgress:p=>{job.progress=p;}});
     await ladder.record(replay);return replay;
   }
+  const leagueRoster=()=>{
+    const custom=Object.fromEntries(String(env.LEAGUE_ROSTER||'').split(',').map(x=>x.trim().split('=')).filter(([f,c])=>c&&personalities.includes(f)&&controllers.some(x=>x.id===c)));
+    return personalities.map(id=>({id,controller:custom[id]||`builtin:${id}`}));
+  };
+  const league=leagueOptions?createLeague({roster:leagueRoster,ladder,...leagueOptions,run:async input=>{
+    const isLive=input.controllers.some(id=>models[id]?.mode==='live');
+    if(isLive&&liveInProgress)throw Object.assign(new Error('busy'),{retry:true});
+    if(isLive)liveInProgress=true;
+    try{return await compute(input,{progress:{}});}
+    catch(error){throw new Error(error instanceof ModelError?error.message:'比赛计算失败。');}
+    finally{if(isLive)liveInProgress=false;}
+  }}):null;
+  const leagueRoute=async(req,res,path)=>{
+    if(!league)return json(res,404,{error:'联赛未启用。'});
+    const query=new URL(req.url,'http://local').searchParams;
+    if(req.method==='GET'&&path==='/api/league')return json(res,200,await league.snapshot());
+    if(req.method==='GET'&&path==='/api/league/matches'){
+      const season=query.has('season')?Number(query.get('season')):undefined,fighter=query.get('fighter')||undefined;
+      if(season!==undefined&&!Number.isSafeInteger(season))return json(res,400,{error:'赛季无效。'});
+      return json(res,200,await league.library({season,fighter}));
+    }
+    let m;
+    if(req.method==='GET'&&(m=/^\/api\/league\/matches\/([\w-]{1,40})$/.exec(path))){const found=await league.match(m[1]);return json(res,found?200:404,found||{error:'找不到联赛比赛。'});}
+    if(req.method==='GET'&&(m=/^\/api\/league\/fighters\/([\w-]{1,40})$/.exec(path))){const found=await league.fighter(m[1]);return json(res,found?200:404,found||{error:'找不到选手。'});}
+    if(req.method==='POST'&&path==='/api/league/reset'){
+      if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 请求。'});
+      const token=env.LEAGUE_ADMIN_TOKEN;
+      if(!token||req.headers.authorization!==`Bearer ${token}`)return json(res,403,{error:'需要联赛管理员令牌。'});
+      await league.reset();return json(res,200,{ok:true});
+    }
+    return json(res,404,{error:'未找到。'});
+  };
 
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy',
@@ -99,6 +138,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
       }
       return;
     }
+    if (path === '/api/league' || path?.startsWith('/api/league/')) return leagueRoute(req, res, path);
     if (req.method === 'GET' && path === '/api/models') {
       return json(res, 200, Object.entries(models).map(([id, { name, description, mode }]) =>
         ({ id, name, description, mode })));
@@ -226,10 +266,13 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
       res.end();
     }
   });
+  server.league = league;
+  if (league) server.on('close', () => league.close());
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '127.0.0.1';
-  createArena().listen(port, host, () => console.log(`LLM Arena listening on http://${host}:${port}`));
+  createArena({ league: process.env.LEAGUE === 'off' ? undefined : {} }).listen(port, host, () => console.log(`LLM Arena listening on http://${host}:${port}`));
 }
