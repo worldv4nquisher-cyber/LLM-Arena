@@ -154,3 +154,92 @@ test('a season with only void matches crowns nobody and keeps tiers', async () =
   assert.ok(snap.ratings.every(r => r.tier === START_TIER));
   await league.close();
 });
+
+test('predictions are private, editable before the match and scored once after it', async t => {
+  const clock={t:1_000_000};
+  const app=createArena({env:{},ladder:createLadder({path:null}),league:{path:null,autostart:false,now:()=>clock.t}});
+  app.listen(0,'127.0.0.1');
+  await once(app,'listening');
+  t.after(()=>new Promise(resolve=>app.close(resolve)));
+  const root=`http://127.0.0.1:${app.address().port}/api/league`;
+  const a='a'.repeat(32),b='b'.repeat(32);
+  const snapshot=async id=>(await fetch(root+(id?`?spectator=${id}`:''))).json();
+  const post=(path,input)=>fetch(root+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
+  await app.league.tick();
+  const {next}=await snapshot(a);
+  const path=`/matches/${next.id}/prediction`;
+  assert.equal((await post(path,{spectator:a,side:2})).status,400);
+  assert.equal((await post(path,{spectator:'invalid',side:0})).status,400);
+  assert.equal((await post(path,{spectator:a,side:1})).status,200);
+  assert.equal((await post(path,{spectator:a,side:0})).status,200);
+  assert.equal((await post(path,{spectator:b,side:1})).status,200);
+  assert.deepEqual((await snapshot(a)).next.prediction,{votes:[1,1],pick:0,outcome:null});
+  assert.deepEqual((await snapshot()).next.prediction,{votes:[1,1],pick:null,outcome:null});
+  await app.league.computing;
+  clock.t+=5000;await app.league.tick();
+  const {live}=await snapshot(a);
+  assert.equal(live.id,next.id);
+  assert.equal((await post(path,{spectator:a,side:1})).status,409);
+  clock.t=live.endsAt;await app.league.tick();
+  for(const [id,side] of [[a,0],[b,1]]){
+    const after=await snapshot(id),match=after.season.matches.find(m=>m.id===live.id);
+    const won=match.result.winner===side,outcome=match.result.winner===null?'draw':won?'correct':'wrong';
+    assert.deepEqual(match.prediction,{votes:[1,1],pick:side,outcome});
+    assert.deepEqual(after.spectator,{points:Number(won),streak:Number(won),last:{id:live.id,player:live.players[side],outcome}});
+    assert.deepEqual((await snapshot(id)).spectator,after.spectator);
+  }
+});
+
+test('live danmaku reaches both viewers, sanitizes content and rate-limits senders', async t => {
+  const clock={t:1_000_000};
+  const app=createArena({env:{},ladder:createLadder({path:null}),league:{path:null,autostart:false,firstDelay:0,now:()=>clock.t}});
+  app.listen(0,'127.0.0.1');
+  await once(app,'listening');
+  const abort=new AbortController();
+  t.after(()=>{abort.abort();return new Promise(resolve=>app.close(resolve));});
+  await app.league.tick();await app.league.computing;await app.league.tick();
+  const {live,next}=await app.league.snapshot();
+  const route=id=>`http://127.0.0.1:${app.address().port}/api/league/matches/${id}/danmaku`;
+  const post=(id,text)=>fetch(route(id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectator:'a'.repeat(32),text})});
+  assert.equal((await fetch(route(next.id))).status,204);
+  assert.equal((await post(next.id,'漂亮')).status,409);
+  assert.equal((await post(live.id,'好'.repeat(61))).status,400);
+  const readers=await Promise.all([0,1].map(async()=>{
+    const response=await fetch(route(live.id),{signal:abort.signal});
+    assert.match(response.headers.get('content-type'),/^text\/event-stream/);
+    const reader=response.body.pipeThrough(new TextDecoderStream()).getReader();
+    assert.equal((await reader.read()).value,'retry: 3000\nevent: ready\ndata: connected\n\n');return reader;
+  }));
+  assert.deepEqual(await (await post(live.id,'  <漂亮>\n翻盘！  ')).json(),{text:'漂亮 翻盘！'});
+  for(const reader of readers)assert.equal((await reader.read()).value,'data: {"text":"漂亮 翻盘！"}\n\n');
+  assert.equal((await post(live.id,'再来')).status,429);
+  clock.t+=2000;
+  assert.equal((await post(live.id,'再来')).status,200);
+  clock.t=live.endsAt;
+  assert.equal((await post(live.id,'好比赛')).status,409);
+  await Promise.all(readers.map(reader=>reader.cancel()));
+});
+
+test('a caller at the danmaku stream cap can retry once a slot opens', async t => {
+  const app=createArena({env:{},ladder:createLadder({path:null}),league:{path:null,autostart:false,firstDelay:0}});
+  app.listen(0,'127.0.0.1');
+  await once(app,'listening');
+  const abort=new AbortController();
+  t.after(()=>{abort.abort();return new Promise(resolve=>app.close(resolve));});
+  await app.league.tick();await app.league.computing;await app.league.tick();
+  const {live}=await app.league.snapshot();
+  const url=`http://127.0.0.1:${app.address().port}/api/league/matches/${live.id}/danmaku`;
+  const closes=[];
+  app.on('request',(_req,res)=>closes.push(once(res,'close')));
+  const streams=await Promise.all(Array.from({length:8},()=>fetch(url,{signal:abort.signal})));
+  assert.ok(streams.every(response=>response.status===200));
+  const overflow=await fetch(url,{headers:{'X-Forwarded-For':'192.0.2.1'},signal:AbortSignal.timeout(5000)});
+  assert.match(overflow.headers.get('content-type'),/^text\/event-stream/);
+  assert.equal(await overflow.text(),'retry: 5000\nevent: capacity\ndata: full\n\n');
+  await Promise.all(streams.map(response=>response.body.cancel()));
+  await Promise.all(closes);
+  const rejoined=await fetch(url,{signal:abort.signal});
+  const reader=rejoined.body.pipeThrough(new TextDecoderStream()).getReader();
+  assert.equal((await reader.read()).value,'retry: 3000\nevent: ready\ndata: connected\n\n');
+  await reader.cancel();
+});

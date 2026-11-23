@@ -25,6 +25,79 @@ export function isKeyHit(beat) {
   );
 }
 
+export function describeExchange(beat,names) {
+  const events=beat.events.flatMap(e=>{
+    const side=eventTarget(e),actor=names[e.player],target=names[side],defense=beat.moves?.[side];
+    if(e.outcome==='danger')return [`${target}踩中危险区，损失${e.damage}点生命`];
+    if(e.outcome==='item')return [`${actor}拾取道具`];
+    if(e.outcome==='parry')return [`${actor}招架反击，造成${e.damage}点伤害`];
+    if(e.outcome==='throw')return [`${actor}${defense==='guard'?'投技破防':'投技命中'}，造成${e.damage}点伤害`];
+    if(e.damage>0)return [`${actor}${e.action==='ultimate'?'绝技命中':e.outcome==='block'?'打在防守上':'出招命中'}，${target}损失${e.damage}点生命`];
+    if(e.outcome==='evade')return [defense==='barrier'?`${target}用屏障挡下了${actor}的远程攻击`:`${target}闪开了${actor}的攻势`];
+    if(e.outcome==='counter')return [`${target}打断了${actor}的投技`];
+    if(e.outcome==='miss')return [`${actor}的攻击落空`];
+    return [];
+  });
+  return events.length?events.join('；')+'。':`${names.join('与')}继续试探，暂无伤害。`;
+}
+
+const highlightLabels={ko:'终结击倒',comeback:'逆风反超',combo:'连续命中',hit:'重击命中'};
+export function buildHighlights(broadcast) {
+  const rounds=new Map(),candidates=[];
+  for(const part of broadcast.segments){
+    if(part.type!=='fight')continue;
+    if(!rounds.has(part.round))rounds.set(part.round,[]);
+    rounds.get(part.round).push(part);
+  }
+  for(const parts of rounds.values()){
+    const {round}=parts[0],chains=[0,0];
+    let maxDeficit=0,recovered=false;
+    for(const [index,part] of parts.entries()){
+      const {beat}=part,kinds=[],hp=beat.states.map(s=>s.hp);
+      const damage=Math.max(0,...beat.events.filter(e=>e.player===0||e.player===1).map(e=>e.damage));
+      const knockout=hp.some(h=>h===0);
+      if(knockout)kinds.push('ko');
+      if(round.winner!==null){
+        const lead=hp[round.winner]-hp[1-round.winner];
+        if(!recovered&&maxDeficit>=20&&lead>0){kinds.push('comeback');recovered=true;}
+        maxDeficit=Math.max(maxDeficit,-lead);
+      }
+      let run=1;
+      for(const side of [0,1]){
+        chains[side]=beat.events.some(e=>e.player===side&&e.damage>0)?chains[side]+1:0;
+        if(chains[side]===3||chains[side]===2&&beat.planDriven?.[side]){
+          if(!kinds.includes('combo'))kinds.push('combo');
+          run=Math.max(run,chains[side]);
+        }
+      }
+      if(!knockout&&isKeyHit(beat)&&damage>0)kinds.push('hit');
+      if(kinds.length){
+        const clip=parts.slice(Math.max(0,index-Math.max(run-1,kinds.includes('comeback')?2:1)),index+1);
+        candidates.push({kinds,clip,damage,start:clip[0].start,end:part.end});
+      }
+    }
+  }
+  candidates.sort((a,b)=>b.damage-a.damage||a.start-b.start);
+  const chosen=[];
+  for(const kind of Object.keys(highlightLabels)){
+    if(chosen.some(c=>c.kinds.includes(kind)))continue;
+    const candidate=candidates.find(c=>c.kinds.includes(kind)&&chosen.every(other=>c.end<=other.start||c.start>=other.end));
+    if(candidate)chosen.push(candidate);
+  }
+  if(!chosen.length&&rounds.size){
+    const last=[...rounds.values()].at(-1).at(-1);
+    chosen.push({kinds:[],clip:[last],start:last.start});
+  }
+  let duration=0;
+  const segments=chosen.sort((a,b)=>a.start-b.start).flatMap(({kinds,clip},i)=>{
+    const title=kinds.map(kind=>highlightLabels[kind]).join(' · ')||'最后交锋',start=clip[0].start,offset=duration;
+    const highlight={index:i+1,total:chosen.length,title};
+    duration+=clip.at(-1).end-start;
+    return clip.map(part=>({...part,start:part.start-start+offset,end:part.end-start+offset,highlight}));
+  });
+  return {segments,duration,count:chosen.length};
+}
+
 export function roundCall(round) {
   const states = round.beats.at(-1).states;
   if (states.every((state) => state.hp === 0)) return "DOUBLE K.O.";

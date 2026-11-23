@@ -1,5 +1,6 @@
 // Homepage league desk: live match, schedule and season standings.
 import { fighters } from './fight-engine.js';
+import { browserSpectator } from './fight-spectator.js';
 
 export const symbols = {gpt:'✧',claude:'✺',gemini:'✦',deepseek:'≋',grok:'♆'};
 export const fighter = id => fighters.find(f=>f.id===id) || {id,name:id,title:'',color:'#c3b0fc'};
@@ -19,9 +20,48 @@ export function matchStatus(m,now) {
   return m.estimatedStart?`预计 ${time(m.estimatedStart)}${m.computing?' · 后台计算中':m.ready?' · 已就绪':''}`:'待赛';
 }
 
-export function mountLeague({onWatch}) {
+export function mountLeague({onWatch,onUpdate}) {
   const $ = id => document.getElementById(id);
   let data=null,offset=0;
+  const spectator=browserSpectator(),select=$('prediction-match'),buttons=[...document.querySelectorAll('.prediction-picks button')];
+  let selected='',scheduleKey='',saving=false,refreshId=0;
+  const outcomes={correct:'竞猜正确 · +1 分',wrong:'竞猜未命中',draw:'比赛平局 · 不计分',void:'比赛取消 · 不计分'};
+  function prediction() {
+    const {matches}=data.season,{points,streak,last}=data.spectator;
+    $('league-prediction').hidden=!matches.length;
+    $('prediction-score').textContent=`积分 ${points} · 连中 ${streak}${last?` · 上次：${fighter(last.player).name} · ${outcomes[last.outcome]}`:''}`;
+    const key=matches.map(m=>m.id).join(',');
+    if(key!==scheduleKey){
+      scheduleKey=key;
+      select.replaceChildren(...matches.map(m=>{
+        const option=node('option',`第 ${m.order} 场 · ${m.players.map(id=>fighter(id).name).join(' vs ')}`);
+        option.value=m.id;return option;
+      }));
+    }
+    const match=matches.find(m=>m.id===selected)??data.next??data.live??matches.at(-1);
+    if(!match)return;
+    select.value=match.id;
+    const {votes,pick,outcome}=match.prediction,total=votes[0]+votes[1],share=total?Math.round(votes[0]*100/total):50;
+    buttons.forEach((button,i)=>{
+      button.textContent=fighter(match.players[i]).name;
+      button.disabled=saving||match.status!=='scheduled';
+      button.setAttribute('aria-pressed',String(i===pick));
+    });
+    $('prediction-tally').textContent=total?`${votes[0]} 票（${share}%） / ${votes[1]} 票（${100-share}%）`:'暂无投票';
+    $('prediction-tally').previousElementSibling.style.setProperty('--vote-share',`${share}%`);
+    const status=outcome?outcomes[outcome]:match.status==='scheduled'?pick===null?'开赛前选择你看好的选手。':'已投票，开赛前可更改。':'本场竞猜已关闭。';
+    if(!saving&&$('prediction-status').dataset.error!==match.id)$('prediction-status').textContent=status;
+  }
+  select.addEventListener('change',()=>{selected=select.value;delete $('prediction-status').dataset.error;prediction();});
+  buttons.forEach((button,side)=>button.addEventListener('click',async()=>{
+    selected=select.value;const id=selected,status=$('prediction-status');
+    delete status.dataset.error;saving=true;prediction();
+    try {
+      const r=await fetch(`/api/league/matches/${id}/prediction`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spectator,side})});
+      const value=await r.json();if(!r.ok)throw new Error(value.error);
+    }catch(error){if(select.value===id){status.dataset.error=id;status.textContent=error.message||'竞猜失败，请重试。';}}
+    finally{saving=false;prediction();await refresh();}
+  }));
   function standings(season,tiers) {
     const table=node('table'),head=node('tr');['名次','选手','段位','等级分','胜 / 平 / 负','局分','积分'].forEach(h=>head.append(node('th',h)));
     const thead=node('thead');thead.append(head);const body=node('tbody');
@@ -75,8 +115,9 @@ export function mountLeague({onWatch}) {
     }else prev.hidden=true;
   }
   async function refresh() {
-    try{const r=await fetch('/api/league'),json=await r.json();if(!r.ok)throw new Error(json.error);data=json;offset=data.now-Date.now();render();}
-    catch(error){$('league-status').textContent=error.message||'联赛暂时不可用';}
+    const id=++refreshId;
+    try{const r=await fetch(`/api/league?spectator=${spectator}`),json=await r.json();if(!r.ok)throw new Error(json.error);if(id!==refreshId)return;data=json;offset=data.now-Date.now();render();if(data.season)prediction();onUpdate?.(data);}
+    catch(error){if(id===refreshId)$('league-status').textContent=error.message||'联赛暂时不可用';}
   }
   refresh();setInterval(refresh,5000);setInterval(render,1000);
   return {refresh,get data(){return data;}};

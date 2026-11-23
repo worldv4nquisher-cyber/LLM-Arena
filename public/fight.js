@@ -1,11 +1,14 @@
 import { fighters } from './fight-engine.js';
 import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel, cellPositions } from './strategy-rules.js';
-import { buildBroadcast, broadcastAt, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
+import { buildBroadcast, broadcastAt, buildHighlights, describeExchange, isKeyHit, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
 import { mountLeague } from './league-ui.js';
+import { mountDanmaku, mountVoice } from './fight-spectator.js';
 
 const $ = id => document.getElementById(id), audio = new ArenaAudio();
+const danmaku=mountDanmaku({overlay:$('danmaku-overlay'),toggle:$('danmaku-toggle'),form:$('danmaku-form'),input:$('danmaku-input'),status:$('danmaku-status')});
+const voice=mountVoice($('voice-commentary'));
 const players = [$('player-0'),$('player-1')], controls = [$('controller-0'),$('controller-1')];
 const symbols = {gpt:'✧',claude:'✺',gemini:'✦',deepseek:'≋',grok:'♆'}, ranges = {near:'近',mid:'中',far:'远'};
 const startingStates=cellPositions([2,6]).map(x=>({x}));
@@ -13,7 +16,8 @@ const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map
 const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
 const fighter = id => fighters.find(f=>f.id===id);
 let scene, replay, timeline, controllers=[], history=[], elapsed=0, playing=false, loading=false, finished=false;
-let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[], leagueMatch=null, league;
+let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[], leagueMatch=null, liveView=false, league;
+let reel=null,showingReel=false,lastClip=null;
 const config = side => fighter(replay&&currentGame>=0 ? replay.players[replay.games[currentGame].sides[side]] : players[side].value);
 const pct = n => `${(n*100).toFixed(1)}%`, delta = n => `${n>=0?'+':''}${(n*100).toFixed(1)}pp`;
 function node(tag,text,className) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;}
@@ -43,6 +47,7 @@ function updateStats(states=[0,1].map(()=>({hp:100,energy:0,stamina:100,budgetLe
 }
 function lock(locked) {[...players,...controls,$('series-games'),$('match-seed'),...document.querySelectorAll('.roster-card')].forEach(e=>e.disabled=locked);}
 function reset() {
+  clearHighlights();voice.stop();
   replay=null;leagueMatch=null;venue();playing=false;finished=false;elapsed=0;currentGame=-1;lastBeat='';lastPhase='';
   scene?.setFighters(players.map(p=>fighter(p.value)));if(scene){scene.pose=null;scene.presentation=null;}
   updateNames();updateStats();
@@ -74,8 +79,10 @@ function resetEntrance(game) {
   $('clock').textContent=status.clock;$('round-label').textContent=status.roundLabel;$('range-band').textContent=status.rangeLabel;$('feed-counter').textContent=status.feedCounter;
 }
 function venue() {
+  const live=liveView&&leagueMatch?.status==='live';
+  danmaku.watch(live?leagueMatch.id:null);
   const e=$('broadcast-venue');e.replaceChildren();
-  if(leagueMatch){e.append(`联赛 · 第${leagueMatch.season}赛季 第${leagueMatch.round}轮 `,node('i','✦'),leagueMatch.status==='live'?' 直播':' 回放');e.classList.toggle('league-live-tag',leagueMatch.status==='live');}
+  if(leagueMatch){e.append(`联赛 · 第${leagueMatch.season}赛季 第${leagueMatch.round}轮 `,node('i','✦'),live?' 直播':' 回放');e.classList.toggle('league-live-tag',live);}
   else{e.append('星穹庭院 ',node('i','✦'),' 黄昏');e.classList.remove('league-live-tag');}
 }
 async function watchLeague(id) {
@@ -86,20 +93,35 @@ async function watchLeague(id) {
     playing=false;lock(false);players.forEach((p,i)=>p.value=data.replay.players[i]);
     controls.forEach((c,i)=>{if(controllers.some(x=>x.id===data.replay.controllers[i]))c.value=data.replay.controllers[i];});
     $('series-games').value=String(data.replay.games.length);
-    replay=data.replay;leagueMatch=data.match;venue();
-    begin(data.match.status==='live'?Math.max(0,(data.serverNow-data.match.startedAt)/1000):0);
+    replay=data.replay;leagueMatch=data.match;liveView=data.match.status==='live';venue();
+    begin(liveView?Math.max(0,(data.serverNow-data.match.startedAt)/1000):0);
     $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
   }catch(error){announce('无法观看联赛',error.message);}
 }
+function clearHighlights() {
+  reel=null;showingReel=false;lastClip=null;
+  $('highlight-play').hidden=true;$('highlight-skip').hidden=true;
+}
+function offerHighlights() {
+  if(leagueMatch&&leagueMatch.status!=='done')return;
+  reel??=buildHighlights(timeline);
+  $('highlight-play').hidden=!reel.count;
+}
 function begin(offset=0) {
-  timeline=buildBroadcast(replay);cues=playbackCues(timeline);elapsed=Math.min(offset,Math.max(0,timeline.duration-0.1));playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
-  scene.resetPose();scene.paused=false;$('series-results').hidden=true;$('battle-feed').replaceChildren();$('pause').disabled=false;$('pause').textContent='Ⅱ 暂停';$('replay').disabled=false;$('start').textContent='↻ 重新开赛';lock(true);
+  clearHighlights();voice.stop();
+  timeline=buildBroadcast(replay);beginPlayback(offset);
   resetEntrance(replay.games[0]);
+  if(leagueMatch?.status==='done')offerHighlights();
+}
+function beginPlayback(offset=0) {
+  cues=playbackCues(timeline);elapsed=Math.min(offset,Math.max(0,timeline.duration-0.1));playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
+  scene.resetPose();scene.paused=false;$('series-results').hidden=true;$('battle-feed').replaceChildren();$('pause').disabled=false;$('pause').textContent='Ⅱ 暂停';$('replay').disabled=false;$('start').textContent='↻ 重新开赛';lock(true);
 }
 function historyControls() {document.querySelectorAll('.history-replay').forEach(e=>e.disabled=loading||!scene);}
 async function startMatch(seed) {
   if(loading||!scene||!controllers.length)return;
   if(seed===undefined){if(!$('match-seed').reportValidity())return;if($('match-seed').value!=='')seed=Number($('match-seed').value);}
+  clearHighlights();voice.stop();
   loading=true;playing=false;leagueMatch=null;venue();lock(true);$('start').disabled=true;$('edit-settings').disabled=true;$('pause').disabled=true;$('replay').disabled=true;
   for(const id of ['draft-card','review-card','series-results'])$(id).hidden=true;
   historyControls();announce('后台计算中','正在创建系列赛…');
@@ -138,13 +160,24 @@ function resultTable() {
   panel.replaceChildren(node('h2',winner===null?'系列赛平局':`${fighter(replay.players[winner]).name} 赢得系列赛`),node('p',`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛 · SEED ${replay.seed}`,'card-kicker'));
   const scroll=node('div',undefined,'table-scroll');scroll.append(table(['选手 / 控制器','胜局','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],replay.series.stats.map((s,i)=>[`${fighter(replay.players[i]).name} / ${controllerLabel(replay.controllers[i])}`,replay.series.wins[i],pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));panel.append(scroll);panel.hidden=false;
 }
-function finish() {
+function showFinal() {
+  showingReel=false;lastClip=null;$('highlight-skip').hidden=true;
   finished=true;playing=false;lock(false);$('pause').disabled=true;$('broadcast-state').textContent='系列赛结束';$('feed-counter').textContent='FINAL';
   for(const id of ['draft-card','review-card','broadcast-highlight'])$(id).hidden=true;$('broadcast').dataset.phase='complete';
   const game=replay.games.at(-1),winner=replay.series.winner;
+  if(currentGame!==replay.games.length-1){
+    currentGame=replay.games.length-1;scene.setFighters([config(0),config(1)]);scene.resetPose();updateNames();
+  }
+  const round=game.rounds.at(-1);
+  updateStats(round.beats.at(-1).states,round.wins);
+  $('clock').textContent=30-round.beats.length;$('round-label').textContent=`ROUND ${String(round.round).padStart(2,'0')}`;$('game-label').textContent=`第 ${currentGame+1}/${replay.games.length} 局`;
   scene.pose=null;scene.presentation={type:'result',states:game.rounds.at(-1).beats.at(-1).states,winner:winner===null?null:game.sides.indexOf(winner)};
   announce(winner===null?'系列赛 · 平局':`${fighter(replay.players[winner]).name} 获胜`,`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛`,leagueMatch?`LEAGUE · SEASON ${leagueMatch.season} · ROUND ${leagueMatch.round}`:'SERIES COMPLETE','result');
-  $('commentary').textContent='策略已见分晓。下方查看双方能力统计与完整系列赛比分。';resultTable();audio.victory();scene.stage.react(1.8);
+  $('commentary').textContent=winner===null?'系列赛结束，双方战平。':`系列赛结束，${fighter(replay.players[winner]).name}获胜！`;
+  resultTable();offerHighlights();
+}
+function finish() {
+  showFinal();voice.say($('commentary').textContent,true);audio.victory();scene.stage.react(1.8);
   const record={players:replay.players,controllers:replay.controllers,games:replay.games.length,wins:replay.series.wins,seed:replay.seed,replay};
   history=[record,...history.filter(m=>m.seed!==record.seed||String(m.players)!==String(record.players)||String(m.controllers)!==String(record.controllers)||m.games!==record.games)].slice(0,8);
   try{localStorage.setItem('celestial-strategy-matches',JSON.stringify(history));}catch{/* Playback also works without storage. */}
@@ -155,7 +188,9 @@ function beatDetails(beat,round,index) {
   const edges=beat.states.map((_,i)=>edgeWarning(beat,i));
   for(let i=0;i<2;i++){$(`reason-${i}`).textContent=beat.reasons[i];$(`status-${i}`).textContent=beat.mistakes[i]?`失误·硬直 · ${mistakeLabel(beat.mistakes[i])}`:beat.planDriven[i]?'连招计划':'';$(`status-${i}`).classList.toggle('warning',!!beat.mistakes[i]);$(`edge-${i}`).textContent=edges[i];$(`edge-${i}`).hidden=!edges[i];}
   $('range-band').textContent=`${ranges[beat.band]}${beat.cells.some(c=>c===0||c===8)?' · 边缘':''}`;
-  $('commentary').textContent=beat.commentary+' '+beat.predictions.map((p,i)=>`${config(i).name}预判${moveName(p)}${beat.planDriven[i]?' · 连招计划':''}${beat.feints[i]?' · 佯攻成功':''}${beat.moves[i]==='scout'?' · 侦察完成':''}${beat.mistakes[i]?' · 失误·硬直':''}`).join('；');
+  const call=describeExchange(beat,[config(0).name,config(1).name]);
+  $('commentary').textContent=call+' '+beat.predictions.map((p,i)=>`${config(i).name}预判${moveName(p)}${beat.planDriven[i]?' · 连招计划':''}${beat.feints[i]?' · 佯攻成功':''}${beat.moves[i]==='scout'?' · 侦察完成':''}${beat.mistakes[i]?' · 失误·硬直':''}`).join('；');
+  if(beat.events.length)voice.say(call,isKeyHit(beat));
   edges.forEach((label,i)=>{if(label)$('commentary').textContent+=`；${config(i).name}${label}`;});
   const items=beat.stage.items.map(x=>`${{heal:'治疗',energy:'能量',stamina:'体力'}[x.type]}道具@${x.cell}`),dangers=beat.stage.dangers.map(d=>`危险区 ${d.cells.join('/')} · -6 HP`),collected=beat.events.filter(e=>e.outcome==='item').map(e=>`${config(e.player).name}拾取道具`);
   $('stage-ticker').textContent=[...collected,...items,...dangers].join(' · ')||'场地平静 · 九格战场';
@@ -167,9 +202,17 @@ function frame(now) {
   if(scene){scene.paused=Boolean(replay&&!playing&&!finished);$('broadcast').dataset.paused=String(scene.paused);}audio.setPaused(document.hidden||Boolean(replay&&!playing&&!finished));
   if(playing&&replay&&scene){
     elapsed=advancePlayback(elapsed,dt*Number($('speed').value),cues,dt);const shot=broadcastAt(timeline,elapsed);$('broadcast').dataset.phase=shot.type;
-    $('draft-card').hidden=shot.type!=='entrance';$('review-card').hidden=shot.type!=='outro';$('broadcast-highlight').hidden=!shot.slowMotion;
-    if(shot.type==='complete')finish();else{
+    $('draft-card').hidden=shot.type!=='entrance';$('review-card').hidden=shot.type!=='outro';
+    const highlight=$('broadcast-highlight');highlight.hidden=!shot.highlight&&!shot.slowMotion;
+    if(!highlight.hidden)highlight.textContent=shot.highlight?`高光 ${shot.highlight.index}/${shot.highlight.total} · ${shot.highlight.title}`:'关键命中 · 慢镜';
+    if(shot.type==='complete'){if(showingReel){voice.stop();showFinal();}else finish();}else{
       if(currentGame!==shot.gameIndex){currentGame=shot.gameIndex;lastPhase='';lastBeat='';scene.setFighters([config(0),config(1)]);scene.resetPose();updateNames();updateStats();draftCard(shot.game);for(let i=0;i<2;i++){$(`reason-${i}`).textContent='等待策略指令';$(`status-${i}`).textContent='';}$('stage-ticker').textContent=currentGame?'换边 · 双方交换左右位置与禁招顺序':'赛前选招 · 同时提交，公平对决';}
+      if(shot.highlight&&shot.highlight!==lastClip){
+        lastClip=shot.highlight;lastBeat='';scene.resetPose();
+        const previous=shot.round.beats[shot.index-1];
+        updateStats(previous?.states,shot.round.round>1?shot.game.rounds[shot.round.round-2].wins:[0,0]);
+        $('commentary').textContent=`赛后高光：${lastClip.title}。`;
+      }
       $('game-label').textContent=`第 ${currentGame+1}/${replay.games.length} 局${currentGame?' · 换边':''}`;
       const phaseKey=`${currentGame}-${shot.type}-${shot.round?.round}-${shot.player}`;
       if(shot.type==='entrance'){
@@ -181,7 +224,7 @@ function frame(now) {
           scene.pose=null;scene.presentation=null;const count=Math.min(3,Math.floor(shot.progress*3.8)),key=`${phaseKey}-${count}`;
           if(lastPhase!==key){lastPhase=key;const budgets=round.round>1?shot.game.rounds[round.round-2].beats.at(-1).states.map(s=>s.budgetLeft):[24,24];updateStats([0,1].map(i=>({hp:100,energy:0,stamina:100,budgetLeft:budgets[i]})),wins);for(let i=0;i<2;i++){$(`reason-${i}`).textContent='准备下一回合';$(`status-${i}`).textContent='';}$('range-band').textContent='远';$('stage-ticker').textContent='九格战场 · 双方回到起点';announce(count===3?'开战！':String(3-count),`${config(0).name} VS ${config(1).name}`,`第 ${currentGame+1} 局 · 第 ${round.round} 回合`,'countdown');$('clock').textContent='30';$('broadcast-state').textContent='开赛倒计时';if(count===3)audio.bell();}
         }else if(shot.type==='fight'){
-          const key=`${currentGame}-${round.round}-${shot.index}`;scene.presentation={type:'fight',slowMotion:shot.slowMotion};scene.setPose(shot.index?round.beats[shot.index-1].states:startingStates,shot.beat,shot.progress,key);$('center-announcement').classList.add('hidden');$('broadcast-state').textContent='比赛进行中';$('clock').textContent=30-shot.index;
+          const key=`${currentGame}-${round.round}-${shot.index}`;scene.presentation={type:'fight',slowMotion:shot.slowMotion};scene.setPose(shot.index?round.beats[shot.index-1].states:startingStates,shot.beat,shot.progress,key);$('center-announcement').classList.add('hidden');$('broadcast-state').textContent=showingReel?'赛后高光集锦':'比赛进行中';$('clock').textContent=30-shot.index;
           if(lastBeat!==key&&shot.progress>=CONTACT){lastBeat=key;beatDetails(shot.beat,round,shot.index);}
         }else if(shot.type==='outro'){
           scene.pose=null;scene.presentation={type:'outro',states:round.beats.at(-1).states,winner:round.winner};
@@ -194,8 +237,15 @@ function frame(now) {
 }
 $('start').addEventListener('click',()=>startMatch());
 $('edit-settings').addEventListener('click',()=>{if(loading)return;lock(false);reset();players[0].focus();});
-$('replay').addEventListener('click',()=>{if(replay&&!loading)begin();});
-$('pause').addEventListener('click',()=>{if(!replay||finished)return;playing=!playing;$('pause').textContent=playing?'Ⅱ 暂停':'▶ 继续';$('broadcast-state').textContent=playing?'比赛继续':'比赛已暂停';lastFrame=undefined;});
+$('replay').addEventListener('click',()=>{if(replay&&!loading){liveView=false;venue();begin();}});
+$('highlight-play').addEventListener('click',()=>{
+  if(!reel?.count||loading||showingReel)return;
+  voice.stop();showingReel=true;lastClip=null;timeline=reel;beginPlayback();
+  $('highlight-play').hidden=true;$('highlight-skip').hidden=false;
+  $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
+});
+$('highlight-skip').addEventListener('click',()=>{if(showingReel){voice.stop();showFinal();$('highlight-play').focus({preventScroll:true});}});
+$('pause').addEventListener('click',()=>{if(!replay||finished)return;playing=!playing;if(!playing)voice.stop();$('pause').textContent=playing?'Ⅱ 暂停':'▶ 继续';$('broadcast-state').textContent=playing?'比赛继续':'比赛已暂停';lastFrame=undefined;});
 document.querySelectorAll('[data-camera]').forEach(button=>button.addEventListener('click',()=>{if(scene)scene.cameraMode=button.dataset.camera;document.querySelectorAll('[data-camera]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));}));
 $('sound').addEventListener('click',async()=>{try{const enabled=await audio.toggle();$('sound').setAttribute('aria-pressed',String(enabled));$('sound').querySelector('span').textContent=enabled?'音效开':'音效关';}catch{$('sound').querySelector('span').textContent='音效不可用';}});
 document.addEventListener('keydown',event=>{if(event.repeat||event.altKey||event.ctrlKey||event.metaKey||['INPUT','SELECT','TEXTAREA','BUTTON','A'].includes(event.target.tagName))return;if(event.code==='Space'){event.preventDefault();$('pause').click();}if(event.key.toLowerCase()==='r')$('replay').click();if(['1','2','3'].includes(event.key))document.querySelectorAll('[data-camera]')[Number(event.key)-1].click();});
@@ -213,4 +263,9 @@ try{
   $('scene').addEventListener('rendererror',()=>{playing=false;$('start').disabled=true;$('pause').disabled=true;announce('3D 画面已中断','请刷新页面重新连接渲染器。');});
 }catch(error){$('loading-scene').textContent='无法初始化比赛，请检查连接与 WebGL 支持。';announce('暂时无法载入',error.message);console.error('Arena initialization failed:',error);}
 refreshLadder();
-league=mountLeague({onWatch:watchLeague});
+league=mountLeague({onWatch:watchLeague,onUpdate:({live,season})=>{
+  if(leagueMatch?.status!=='live'||leagueMatch.id===live?.id)return;
+  const match=season?.matches.find(m=>m.id===leagueMatch.id);
+  if(match){leagueMatch=match;venue();if(finished)offerHighlights();}
+  else danmaku.watch(null);
+}});
