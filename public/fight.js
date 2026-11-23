@@ -201,7 +201,7 @@ function frame(now) {
   const dt=Math.max(0,(now-(lastFrame??now))/1000);lastFrame=now;
   if(scene){scene.paused=Boolean(replay&&!playing&&!finished);$('broadcast').dataset.paused=String(scene.paused);}audio.setPaused(document.hidden||Boolean(replay&&!playing&&!finished));
   if(playing&&replay&&scene){
-    elapsed=advancePlayback(elapsed,dt*(showingReel?0.85:Number($('speed').value)),cues,dt);const shot=broadcastAt(timeline,elapsed);$('broadcast').dataset.phase=shot.type;
+    elapsed=advancePlayback(elapsed,dt*Number($('speed').value),cues,dt);const shot=broadcastAt(timeline,elapsed);$('broadcast').dataset.phase=shot.type;
     $('draft-card').hidden=shot.type!=='entrance';$('review-card').hidden=shot.type!=='outro';
     const highlight=$('broadcast-highlight');highlight.hidden=!shot.highlight&&!shot.slowMotion;
     if(!highlight.hidden)highlight.textContent=shot.highlight?`高光 ${shot.highlight.index}/${shot.highlight.total} · ${shot.highlight.title}`:'关键命中 · 慢镜';
