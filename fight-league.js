@@ -141,7 +141,7 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
   }
   async function pruneReplays() {
     const done=state.seasons.flatMap(s=>s.matches).filter(m=>m.status==='done'&&!m.pruned);
-    for(const m of done.slice(0,Math.max(0,done.length-keepReplays))){m.pruned=true;replays.delete(m.id);if(root!==null)await rm(join(root,'replays',`${m.id}.json`),{force:true});}
+    for(const m of done.slice(0,Math.max(0,done.length-keepReplays))){m.pruned=true;replays.delete(m.id);if(root!==null)await rm(join(root,'replays',`${m.id}.json`),{force:true}).catch(()=>{});}
   }
   function startCompute(m) {
     m.status='computing';
@@ -222,7 +222,7 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     async reset() {
       await ready;await ticking;await computing;
       state=fresh();replays.clear();
-      if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true});
+      if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true}).catch(()=>{});
       await ladder?.reset?.();await persist();await tick();
     },
     start(){if(!timer&&!closed){timer=setInterval(tick,interval);timer.unref?.();tick();}},
