@@ -161,7 +161,6 @@ function resultTable() {
   const scroll=node('div',undefined,'table-scroll');scroll.append(table(['选手 / 控制器','胜局','失误率','预判命中率（类别）','佯攻成功率','回合间提升'],replay.series.stats.map((s,i)=>[`${fighter(replay.players[i]).name} / ${controllerLabel(replay.controllers[i])}`,replay.series.wins[i],pct(s.mistakeRate),pct(s.predictionCategoryHitRate??s.predictionHitRate),pct(s.feintSuccessRate),improvement(s)])));panel.append(scroll);panel.hidden=false;
 }
 function showFinal() {
-  danmaku.watch(null);
   showingReel=false;lastClip=null;$('highlight-skip').hidden=true;
   finished=true;playing=false;lock(false);$('pause').disabled=true;$('broadcast-state').textContent='系列赛结束';$('feed-counter').textContent='FINAL';
   for(const id of ['draft-card','review-card','broadcast-highlight'])$(id).hidden=true;$('broadcast').dataset.phase='complete';
