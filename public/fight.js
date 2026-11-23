@@ -1,5 +1,5 @@
 import { fighters } from './fight-engine.js';
-import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel } from './strategy-rules.js';
+import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel, cellPositions } from './strategy-rules.js';
 import { buildBroadcast, broadcastAt, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
@@ -7,6 +7,7 @@ import { ArenaAudio } from './fight-audio.js';
 const $ = id => document.getElementById(id), audio = new ArenaAudio();
 const players = [$('player-0'),$('player-1')], controls = [$('controller-0'),$('controller-1')];
 const symbols = {gpt:'✧',claude:'✺',gemini:'✦',deepseek:'≋',grok:'♆'}, ranges = {near:'近',mid:'中',far:'远'};
+const startingStates=cellPositions([2,6]).map(x=>({x}));
 const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map(m=>[m.id,m.name]));
 const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
 const fighter = id => fighters.find(f=>f.id===id);
@@ -161,7 +162,7 @@ function frame(now) {
           scene.pose=null;scene.presentation=null;const count=Math.min(3,Math.floor(shot.progress*3.8)),key=`${phaseKey}-${count}`;
           if(lastPhase!==key){lastPhase=key;const budgets=round.round>1?shot.game.rounds[round.round-2].beats.at(-1).states.map(s=>s.budgetLeft):[24,24];updateStats([0,1].map(i=>({hp:100,energy:0,stamina:100,budgetLeft:budgets[i]})),wins);for(let i=0;i<2;i++){$(`reason-${i}`).textContent='准备下一回合';$(`status-${i}`).textContent='';}$('range-band').textContent='远';$('stage-ticker').textContent='九格战场 · 双方回到起点';announce(count===3?'开战！':String(3-count),`${config(0).name} VS ${config(1).name}`,`第 ${currentGame+1} 局 · 第 ${round.round} 回合`,'countdown');$('clock').textContent='30';$('broadcast-state').textContent='开赛倒计时';if(count===3)audio.bell();}
         }else if(shot.type==='fight'){
-          const key=`${currentGame}-${round.round}-${shot.index}`;scene.presentation={type:'fight',slowMotion:shot.slowMotion};scene.setPose(shot.index?round.beats[shot.index-1].states:[{x:-2.1},{x:2.1}],shot.beat,shot.progress,key);$('center-announcement').classList.add('hidden');$('broadcast-state').textContent='比赛进行中';$('clock').textContent=30-shot.index;
+          const key=`${currentGame}-${round.round}-${shot.index}`;scene.presentation={type:'fight',slowMotion:shot.slowMotion};scene.setPose(shot.index?round.beats[shot.index-1].states:startingStates,shot.beat,shot.progress,key);$('center-announcement').classList.add('hidden');$('broadcast-state').textContent='比赛进行中';$('clock').textContent=30-shot.index;
           if(lastBeat!==key&&shot.progress>=CONTACT){lastBeat=key;beatDetails(shot.beat,round,shot.index);}
         }else if(shot.type==='outro'){
           scene.pose=null;scene.presentation={type:'outro',states:round.beats.at(-1).states,winner:round.winner};

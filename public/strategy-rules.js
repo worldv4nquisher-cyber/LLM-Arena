@@ -1,6 +1,13 @@
 export const bands = d => d === 1 ? 'near' : d <= 3 ? 'mid' : 'far';
 export const eventTarget = e => e.target ?? (e.player===0?1:e.player===1?0:null);
 export const mistakeLabel = reason => !reason?'':reason==='illegal move'?'非法招式':reason==='timeout'?'决策超时':'指令异常';
+export const WORLD_EDGE = 4.45;
+export function cellPositions(cells) {
+  const step=(2*WORLD_EDGE-2.2)/7;
+  const gap=2.2+(cells[1]-cells[0]-1)*step;
+  const center=((cells[0]+cells[1])/2-4)*step;
+  return [center-gap/2,center+gap/2];
+}
 export function seededRng(seed = 1) {
   let n = 2166136261;
   for (const c of String(seed)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
@@ -127,7 +134,6 @@ export function resolveTurn(input, submissions, rng = seededRng(1)) {
     fs[i].lag=lag[i];fs[i].stamina=Math.min(100,fs[i].stamina+10);fs[i].energy=Math.min(100,fs[i].energy+4);
     state.stage.items=state.stage.items.filter(item=>{if(item.cell!==fs[i].cell)return true;const key={heal:'hp',energy:'energy',stamina:'stamina'}[item.type];fs[i][key]=Math.min(100,fs[i][key]+{heal:15,energy:30,stamina:40}[item.type]);events.push({player:i,action:'guard',damage:0,outcome:'item',item:item.type});return false;});
   });
-  const gap=2.2+(fs[1].cell-fs[0].cell-1)*4/7;
-  const center=Math.max(-3.1+gap/2,Math.min(3.1-gap/2,((fs[0].cell+fs[1].cell)/2-4)*.4));
-  return {state,beat:{turn,actions:moves.map(m=>m.anim),moves:moves.map(m=>m.id),names:moves.map(m=>m.name),events,states:fs.map((f,i)=>({...structuredClone(f),x:center+(i?1:-1)*gap/2})),stamina:fs.map(f=>f.stamina),cells:fs.map(f=>f.cell),band,stage:structuredClone(state.stage),feints}};
+  const positions=cellPositions(fs.map(f=>f.cell));
+  return {state,beat:{turn,actions:moves.map(m=>m.anim),moves:moves.map(m=>m.id),names:moves.map(m=>m.name),events,states:fs.map((f,i)=>({...structuredClone(f),x:positions[i]})),stamina:fs.map(f=>f.stamina),cells:fs.map(f=>f.cell),band,stage:structuredClone(state.stage),feints}};
 }

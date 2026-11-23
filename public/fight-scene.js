@@ -2,7 +2,9 @@ import * as T from "/vendor/three.module.js";
 import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged, stunPose } from "./fight-choreography.js";
 import { buildArenaStage } from "./fight-stage.js";
 import { makeFighter } from "./fight-models.js";
-import { eventTarget } from './strategy-rules.js';
+import { eventTarget, cellPositions } from './strategy-rules.js';
+
+const startingPositions=cellPositions([2,6]);
 
 const mat = (color, extra = {}) =>
   new T.MeshStandardMaterial({ color, roughness: 0.73, ...extra });
@@ -306,9 +308,9 @@ export class FightScene {
       const melee = isMelee(action), ranged = isRanged(action);
       const attack = melee || ranged;
       const x = positions?.[i] ?? (staged ? presentation.states[i].x : entering
-        ? T.MathUtils.lerp(i ? 4.5 : -4.5, i ? 2.1 : -2.1,
+        ? T.MathUtils.lerp(i ? 4.5 : -4.5, startingPositions[i],
             T.MathUtils.smoothstep(presentation.progress, 0, 0.65))
-        : i ? 2.1 : -2.1);
+        : startingPositions[i]);
       f.root.position.set(x - direction * (recoil * (blocked ? 0.06 : 0.18) + down * 0.3),
         0.07, -evade * 0.95);
       // Keep floor rings grounded: only the jointed body crouches, recoils or falls.

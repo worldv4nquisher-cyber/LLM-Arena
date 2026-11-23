@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBuiltinController,createFlakyController} from '../fight-controllers.js';
 import {runSeries} from '../fight-match.js';
-import {createState,resolveTurn,mistakeLabel} from '../public/strategy-rules.js';
+import {createState,resolveTurn,mistakeLabel,cellPositions,WORLD_EDGE} from '../public/strategy-rules.js';
 import {edgeWarning,buildBroadcast,broadcastAt,fightTimeAt} from '../public/fight-broadcast.js';
 import {stunPose,combatPositions} from '../public/fight-choreography.js';
 
@@ -21,7 +21,33 @@ test('seeded built-in edge retreat reaches the spectator timeline without changi
   assert.equal(shot.beat,beat);
   const positions=combatPositions(round.beats[21].states,beat,1);
   assert.deepEqual(positions,beat.states.map(s=>s.x));
-  assert.ok(positions[1]<=3.1&&positions[1]-positions[0]>=2.2);
+  assert.ok(Math.abs(positions[1]-4.45)<1e-9);
+  assert.ok(positions[1]-positions[0]>=2.2);
+});
+
+test('all cell pairs preserve readable spacing and put edge fighters just inside the floor rim',()=>{
+  assert.equal(WORLD_EDGE,4.45);
+  const gaps=new Map();
+  for(let left=0;left<8;left++)for(let right=left+1;right<=8;right++) {
+    const positions=cellPositions([left,right]);
+    assert.ok(positions.every(x=>Math.abs(x)<=4.45+1e-9));
+    assert.ok(positions.every(x=>Math.abs(x)+0.9<5.4));
+    const gap=positions[1]-positions[0];
+    assert.ok(gap>=2.2-1e-9);
+    gaps.set(right-left,gap);
+    if(left===0)assert.ok(Math.abs(positions[0]+4.45)<1e-9);
+    if(right===8)assert.ok(Math.abs(positions[1]-4.45)<1e-9);
+    const mirror=cellPositions([8-right,8-left]);
+    assert.ok(Math.abs(positions[0]+mirror[1])<1e-9);
+    if(right-left>1) {
+      assert.ok(Math.abs(cellPositions([left+1,right])[1]-positions[1])<1e-9);
+      assert.ok(Math.abs(cellPositions([left,right-1])[0]-positions[0])<1e-9);
+    }
+  }
+  assert.ok(gaps.get(1)<gaps.get(2)&&gaps.get(3)<gaps.get(4));
+  const state=createState();
+  const {beat}=resolveTurn(state,[{mistake:'timeout'},{move:'guard'}]);
+  assert.deepEqual(beat.states.map(s=>s.x),cellPositions([2,6]));
 });
 
 test('edge labels distinguish corners, either side, retreat back to center and absent cell metadata',()=>{
