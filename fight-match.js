@@ -17,7 +17,7 @@ async function invoke(controller, method, view, deadlines, parentSignal) {
     const result=await Promise.race([pending,stopped]);
     if(!result || typeof result!=='object' || Array.isArray(result)) throw new Error('invalid output');
     return {result};
-  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};}
+  } catch(e) {return {error:e instanceof ModelError&&e.detail==='timeout'?'timeout':typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};}
   finally {clearTimeout(timer);signal.removeEventListener('abort',onAbort);abort.abort();if(controller.mode==='live')await pending?.catch(()=>{});}
 }
 function decisionError(r, view) {

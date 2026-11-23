@@ -10,6 +10,7 @@ import {liveController,parseControllerReply,createBuiltinController} from '../fi
 import {runSeries} from '../fight-match.js';
 import {createLadder} from '../fight-ladder.js';
 import {createArena} from '../server.js';
+import {mistakeLabel} from '../public/strategy-rules.js';
 
 const env={OPENAI_API_KEY:'test-openai-key',OPENAI_MODEL:'test-o',ANTHROPIC_API_KEY:'test-anthropic-key',ANTHROPIC_MODEL:'test-a'};
 function replyFor(view) {
@@ -51,6 +52,29 @@ for(const [id,model] of Object.entries(availableModels(env)).filter(([,m])=>m.mo
     assert.ok(quick.view.legalMoves.every(m=>m.quick));
     if(model.provider==='openai') {assert.match(decision.url,/\/responses$/);assert.equal(decision.options.headers.Authorization,`Bearer ${model.key}`);assert.equal(quick.body.max_output_tokens,256);assert.equal(decision.body.store,false);}
     else {assert.match(decision.url,/\/messages$/);assert.equal(decision.options.headers['x-api-key'],model.key);assert.equal(decision.options.headers['anthropic-version'],'2023-06-01');assert.equal(quick.body.max_tokens,256);}
+  });
+  test(`${model.provider}: own provider timeout keeps its referee and spectator classification`,async()=>{
+    let timedOut=false;
+    const respond=mockProvider(model.provider);
+    const request=async(url,options)=>{
+      const body=JSON.parse(options.body),prompt=body.input||body.messages[0].content;
+      if(!timedOut&&prompt.includes('Phase: decide')) {
+        timedOut=true;
+        return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+      }
+      return respond(url,options);
+    };
+    const controller=liveController(id,{...model,timeout:20},{request});
+    const replay=await runSeries({...options([controller,createBuiltinController('gpt')]),deadlines:{normal:1000,quick:1000}});
+    const beats=replay.games[0].rounds.flatMap(r=>r.beats),first=beats[0];
+    assert.ok(timedOut);
+    assert.equal(first.mistakes[0],'timeout');
+    assert.equal(mistakeLabel(first.mistakes[0]),'决策超时');
+    assert.match(first.reasons[0],/决策超时/);
+    assert.match(first.commentary,/决策超时/);
+    assert.equal(first.actions[0],'stunned');
+    assert.equal(replay.series.stats[0].mistakes,1);
+    assert.ok(beats.slice(1).every(b=>b.mistakes[0]===null));
   });
   test(`${model.provider}: invalid move and one provider failure stun, three HTTP 401 turns abort`,async()=>{
     let turns=0;
