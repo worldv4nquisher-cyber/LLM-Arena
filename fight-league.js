@@ -135,9 +135,10 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     m.status='done';m.endedAt=at;
   }
   function completeSeason(season,at) {
-    const final=seasonStandings(season,state.ratings),changes=tierChanges(final,state.ratings);
+    const final=seasonStandings(season,state.ratings),played=season.matches.some(m=>m.status==='done');
+    const changes=played?tierChanges(final,state.ratings):final.map(r=>({id:r.id,place:r.place,from:r.tier,to:r.tier,change:0}));
     for(const c of changes)rating(c.id).tier=c.to;
-    Object.assign(season,{status:'complete',endedAt:at,nextAt:at+seasonBreak,champion:final[0]?.id??null,final,changes});
+    Object.assign(season,{status:'complete',endedAt:at,nextAt:at+seasonBreak,champion:played?final[0]?.id??null:null,final,changes});
   }
   async function pruneReplays() {
     const done=state.seasons.flatMap(s=>s.matches).filter(m=>m.status==='done'&&!m.pruned);

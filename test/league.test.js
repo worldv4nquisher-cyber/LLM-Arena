@@ -142,3 +142,15 @@ test('league API serves schedule, matches, fighters and an authorized reset', as
   assert.equal((await reset({ Authorization: 'Bearer secret' })).status, 200);
   for (const page of ['/fighter', '/replays', '/league.css', '/league-ui.js', '/fighter.js', '/replays.js']) assert.equal((await fetch(url + page)).status, 200, page);
 });
+
+test('a season with only void matches crowns nobody and keeps tiers', async () => {
+  const clock = { t: 0 };
+  const league = createLeague({ path: null, roster, autostart: false, firstDelay: 0, now: () => clock.t, run: async () => { throw new Error('down'); } });
+  for (let i = 0; i < 30; i++) { clock.t += 1000; await league.tick(); if (league.computing) await league.computing; }
+  const snap = await league.snapshot();
+  assert.equal(snap.previous.number, 1);
+  assert.equal(snap.previous.champion, null);
+  assert.ok(snap.previous.changes.every(c => c.change === 0));
+  assert.ok(snap.ratings.every(r => r.tier === START_TIER));
+  await league.close();
+});

@@ -49,7 +49,7 @@ export function mountLeague({onWatch}) {
   function liveCard(now) {
     const card=$('league-live'),m=data.live||data.next;card.replaceChildren();card.dataset.state=data.live?'live':'next';
     if(!data.season){card.append(node('strong','联赛准备中'));return;}
-    if(data.season.status==='complete'){card.dataset.state='break';card.append(node('small','SEASON COMPLETE'),node('strong',`第 ${data.season.number} 赛季结束 · 冠军 ${fighter(data.previous?.champion).name}`),node('span',`新赛季约 ${clock(data.season.nextAt-now)} 后开赛`));return;}
+    if(data.season.status==='complete'){card.dataset.state='break';card.append(node('small','SEASON COMPLETE'),node('strong',`第 ${data.season.number} 赛季结束 · ${data.previous?.champion?`冠军 ${fighter(data.previous.champion).name}`:'无有效比赛'}`),node('span',`新赛季约 ${clock(data.season.nextAt-now)} 后开赛`));return;}
     if(!m){card.append(node('strong','本赛季比赛已全部结束'));return;}
     const vs=node('div',undefined,'live-vs');vs.append(badge(m.players[0]),node('i','VS'),badge(m.players[1]));
     if(data.live){
@@ -68,7 +68,7 @@ export function mountLeague({onWatch}) {
     const scroll=node('div',undefined,'table-scroll');scroll.append(standings(data.season,data.tiers));$('league-standings').replaceChildren(scroll);
     const prev=$('league-previous');prev.replaceChildren();
     if(data.previous){
-      prev.hidden=false;prev.append(node('small',`第 ${data.previous.number} 赛季冠军`));const champ=node('div',undefined,'champion');champ.append(node('span','♛','crown'),badge(data.previous.champion));prev.append(champ);
+      prev.hidden=false;prev.append(node('small',data.previous.champion?`第 ${data.previous.number} 赛季冠军`:`第 ${data.previous.number} 赛季无有效比赛，段位不变`));if(data.previous.champion){const champ=node('div',undefined,'champion');champ.append(node('span','♛','crown'),badge(data.previous.champion));prev.append(champ);}
       const moves=node('div',undefined,'tier-moves');
       data.previous.changes.forEach(c=>{const e=node('span',undefined,`tier-move ${c.change>0?'up':c.change<0?'down':'stay'}`);e.append(node('b',`${c.place}. ${fighter(c.id).name}`),node('span',c.change>0?`▲ 晋级 ${data.tiers[c.to]}`:c.change<0?`▼ 降级 ${data.tiers[c.to]}`:`保级 ${data.tiers[c.to]}`));moves.append(e);});
       prev.append(moves);
