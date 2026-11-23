@@ -6,7 +6,7 @@ import { games, newBoard, legalMoves, play } from './public/rules.js';
 import { availableModels, demoMove, liveMove, ModelError } from './opponents.js';
 import { fighters } from './public/fight-engine.js';
 import { randomInt, randomUUID } from 'node:crypto';
-import { createBuiltinController, personalities, liveController } from './fight-controllers.js';
+import { createBuiltinController, createFlakyController, personalities, liveController } from './fight-controllers.js';
 import { runSeries } from './fight-match.js';
 import { createLadder } from './fight-ladder.js';
 
@@ -60,6 +60,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
   let liveInProgress = false;
   const controllers = [
     ...personalities.map(id => ({id:`builtin:${id}`, label:`内置策略 ${id}`, mode:'builtin'})),
+    {id:'demo:flaky',label:'故障演练 · GPT（偶发非法招式）',mode:'demo'},
     ...Object.entries(models).filter(([,m])=>m.mode==='live').map(([id,m])=>({id,label:`${m.description} ${m.name}`,mode:'live'})),
   ];
   const jobs = new Map();
@@ -75,7 +76,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     const id=randomUUID(),job={status:'running',progress:{game:0,round:0,turn:0}};
     jobs.set(id,job);return {id,job};
   }
-  const brain=(id,seed)=>id.startsWith('builtin:')?createBuiltinController(id.slice(8),{seed}):liveController(id,models[id],{request});
+  const brain=(id,seed)=>id==='demo:flaky'?createFlakyController({seed}):id.startsWith('builtin:')?createBuiltinController(id.slice(8),{seed}):liveController(id,models[id],{request});
   async function compute(input,job) {
     const replay=await runSeries({...input,controllers:input.controllers.map(id=>brain(id,input.seed)),memory:await ladder.memory(input.controllers),deadlines,onProgress:p=>{job.progress=p;}});
     await ladder.record(replay);return replay;

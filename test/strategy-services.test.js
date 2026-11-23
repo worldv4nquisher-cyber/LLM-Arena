@@ -103,7 +103,7 @@ async function serve(t,options={}) {
 async function poll(api,path){for(let i=0;i<500;i++){const r=await api.get(path),job=await r.json();if(job.status!=='running')return job;await delay(2);}throw new Error('job did not finish');}
 const input={players:['gpt','claude'],controllers:['builtin:gpt','builtin:claude'],games:1,seed:3};
 test('async fight endpoints, validation, ladder round robin, bounded job retention',async t=>{
-  const api=await serve(t),list=await api.get('/api/controllers').then(r=>r.json());assert.equal(list.length,5);assert.ok(list.every(c=>c.label.includes('内置策略')));
+  const api=await serve(t),list=await api.get('/api/controllers').then(r=>r.json());assert.equal(list.filter(c=>c.mode==='builtin').length,5);assert.ok(list.filter(c=>c.mode==='builtin').every(c=>c.label.includes('内置策略')));assert.ok(list.some(c=>c.id==='demo:flaky'&&c.mode==='demo'));
   assert.deepEqual(await api.get('/api/ladder').then(r=>r.json()),[]);
   for(const bad of [{...input,games:3},{...input,seed:-1},{...input,controllers:['builtin:gpt','bad']},{...input,players:['bad','gpt']},{}])assert.equal((await api.post('/api/fights',bad)).status,400);
   for(const path of ['/api/fights','/api/ladder/run']) {
@@ -121,6 +121,17 @@ test('async fight endpoints, validation, ladder round robin, bounded job retenti
   const rows=await api.get('/api/ladder').then(r=>r.json());assert.equal(rows.length,5);assert.equal(rows.reduce((n,s)=>n+s.games,0),22);
   for(let n=0;n<20;n++){const r=await api.post('/api/fights',input);assert.equal(r.status,202);await poll(api,`/api/fights/${(await r.json()).id}`);}
   assert.equal((await api.get(`/api/fights/${id}`)).status,404);
+});
+test('fault rehearsal is an opt-in server-computed match with referee mistake metadata',async t=>{
+  const api=await serve(t);
+  const response=await api.post('/api/fights',{...input,controllers:['demo:flaky','builtin:claude'],seed:2});
+  assert.equal(response.status,202);
+  const job=await poll(api,`/api/fights/${(await response.json()).id}`);
+  assert.equal(job.status,'done');
+  const beat=job.replay.games[0].rounds[0].beats[0];
+  assert.equal(beat.mistakes[0],'illegal move');
+  assert.equal(beat.actions[0],'stunned');
+  assert.ok(job.replay.series.stats[0].mistakeRate>0);
 });
 test('configured live controller listing hides secrets, live concurrency cap, 401 abort does not touch ladder',async t=>{
   let release;const gate=new Promise(resolve=>{release=resolve;});

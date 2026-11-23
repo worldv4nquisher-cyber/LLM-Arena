@@ -1,5 +1,6 @@
 export const bands = d => d === 1 ? 'near' : d <= 3 ? 'mid' : 'far';
 export const eventTarget = e => e.target ?? (e.player===0?1:e.player===1?0:null);
+export const mistakeLabel = reason => !reason?'':reason==='illegal move'?'非法招式':reason==='timeout'?'决策超时':'指令异常';
 export function seededRng(seed = 1) {
   let n = 2166136261;
   for (const c of String(seed)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
@@ -69,7 +70,7 @@ export function planMatches(condition, view, previous, side) {
 }
 export function resolveTurn(input, submissions, rng = seededRng(1)) {
   const state=structuredClone(input), fs=state.fighters, turn=++state.turn;
-  const moves=submissions.map((s,i)=>s.mistake?move('stunned','失误眩晕','stunned'):availableMoves(fs[i]).find(m=>m.id===s.move));
+  const moves=submissions.map((s,i)=>s.mistake?move('stunned','失误硬直','stunned',all,0,0,1,0,'stunned'):availableMoves(fs[i]).find(m=>m.id===s.move));
   if(moves.some(m=>!m)) throw new Error('Unvalidated move');
   const events=[], feints=[false,false], damageTaken=[0,0], lag=moves.map(m=>m.recovery);
   state.stage.items=state.stage.items.filter(x=>x.expires>=turn);

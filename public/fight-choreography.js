@@ -34,6 +34,11 @@ export const ease = (n) => {
 export const isMelee = (action) => ["strike", "heavy"].includes(action);
 export const isRanged = (action) => ["blast", "ultimate"].includes(action);
 
+export function stunPose(action, progress) {
+  const droop=action==='stunned'?ease(progress/0.2):0;
+  return {droop,sway:droop*Math.sin(progress*Math.PI*4)*0.06};
+}
+
 export function sidestep(beat, side, progress) {
   if (beat.actions[side] !== "evade") return 0;
   const caught = beat.events.some((e) => eventTarget(e) === side && e.damage > 0);

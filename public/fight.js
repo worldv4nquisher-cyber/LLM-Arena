@@ -1,6 +1,6 @@
 import { fighters } from './fight-engine.js';
-import { baseMoves, movePool, ultimates, eventTarget } from './strategy-rules.js';
-import { buildBroadcast, broadcastAt, roundCall, entranceStatus } from './fight-broadcast.js';
+import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel } from './strategy-rules.js';
+import { buildBroadcast, broadcastAt, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
 
@@ -35,10 +35,11 @@ function updateStats(states=[0,1].map(()=>({hp:100,energy:0,stamina:100,budgetLe
     for(const key of ['health','energy','stamina'])$(`${key}-${i}`).style.width=`${key==='health'?s.hp:s[key]}%`;
     $(`stamina-value-${i}`).textContent=s.stamina;$(`energy-${i}`).parentElement.title=`能量 ${s.energy}/100`;
     $(`budget-${i}`).textContent=`思考 ${s.budgetLeft}/24`;$(`scouted-${i}`).hidden=!s.scouted;
+    $(`edge-${i}`).hidden=true;
     $(`wins-${i}`).textContent=[0,1].map(n=>wins[i]>n?'◆':'◇').join(' ');
   });
 }
-function lock(locked) {[...players,...controls,$('series-games'),...document.querySelectorAll('.roster-card')].forEach(e=>e.disabled=locked);}
+function lock(locked) {[...players,...controls,$('series-games'),$('match-seed'),...document.querySelectorAll('.roster-card')].forEach(e=>e.disabled=locked);}
 function reset() {
   replay=null;playing=false;finished=false;elapsed=0;currentGame=-1;lastBeat='';lastPhase='';
   scene?.setFighters(players.map(p=>fighter(p.value)));if(scene){scene.pose=null;scene.presentation=null;}
@@ -78,6 +79,7 @@ function begin() {
 function historyControls() {document.querySelectorAll('.history-replay').forEach(e=>e.disabled=loading||!scene);}
 async function startMatch(seed) {
   if(loading||!scene||!controllers.length)return;
+  if(seed===undefined){if(!$('match-seed').reportValidity())return;if($('match-seed').value!=='')seed=Number($('match-seed').value);}
   loading=true;playing=false;lock(true);$('start').disabled=true;$('edit-settings').disabled=true;$('pause').disabled=true;$('replay').disabled=true;
   for(const id of ['draft-card','review-card','series-results'])$(id).hidden=true;
   historyControls();announce('后台计算中','正在创建系列赛…');
@@ -130,12 +132,14 @@ function finish() {
 }
 function beatDetails(beat,round,index) {
   updateStats(beat.states,round.round>1?replay.games[currentGame].rounds[round.round-2].wins:[0,0]);
-  for(let i=0;i<2;i++){$(`reason-${i}`).textContent=beat.reasons[i];$(`status-${i}`).textContent=beat.mistakes[i]?'失误·硬直':beat.planDriven[i]?'连招计划':'';$(`status-${i}`).classList.toggle('warning',!!beat.mistakes[i]);}
+  const edges=beat.states.map((_,i)=>edgeWarning(beat,i));
+  for(let i=0;i<2;i++){$(`reason-${i}`).textContent=beat.reasons[i];$(`status-${i}`).textContent=beat.mistakes[i]?`失误·硬直 · ${mistakeLabel(beat.mistakes[i])}`:beat.planDriven[i]?'连招计划':'';$(`status-${i}`).classList.toggle('warning',!!beat.mistakes[i]);$(`edge-${i}`).textContent=edges[i];$(`edge-${i}`).hidden=!edges[i];}
   $('range-band').textContent=`${ranges[beat.band]}${beat.cells.some(c=>c===0||c===8)?' · 边缘':''}`;
   $('commentary').textContent=beat.commentary+' '+beat.predictions.map((p,i)=>`${config(i).name}预判${moveName(p)}${beat.planDriven[i]?' · 连招计划':''}${beat.feints[i]?' · 佯攻成功':''}${beat.moves[i]==='scout'?' · 侦察完成':''}${beat.mistakes[i]?' · 失误·硬直':''}`).join('；');
+  edges.forEach((label,i)=>{if(label)$('commentary').textContent+=`；${config(i).name}${label}`;});
   const items=beat.stage.items.map(x=>`${{heal:'治疗',energy:'能量',stamina:'体力'}[x.type]}道具@${x.cell}`),dangers=beat.stage.dangers.map(d=>`危险区 ${d.cells.join('/')} · -6 HP`),collected=beat.events.filter(e=>e.outcome==='item').map(e=>`${config(e.player).name}拾取道具`);
   $('stage-ticker').textContent=[...collected,...items,...dangers].join(' · ')||'场地平静 · 九格战场';
-  $('battle-feed').prepend(node('li',`G${currentGame+1} R${round.round} · ${index+1} ${beat.names.join(' / ')}`));while($('battle-feed').children.length>24)$('battle-feed').lastChild.remove();$('feed-counter').textContent=`${index+1} EXCHANGES`;
+  $('battle-feed').prepend(node('li',`G${currentGame+1} R${round.round} · ${index+1} ${beat.names.map((name,i)=>`${name}${beat.mistakes[i]?`（${mistakeLabel(beat.mistakes[i])}）`:''}${edges[i]?`（${edges[i]}）`:''}`).join(' / ')}`));while($('battle-feed').children.length>24)$('battle-feed').lastChild.remove();$('feed-counter').textContent=`${index+1} EXCHANGES`;
   beat.events.forEach(e=>{if(!e.damage)return;const n=$(`damage-${eventTarget(e)}`);n.textContent=`−${e.damage}`;n.classList.remove('pop');void n.offsetWidth;n.classList.add('pop');});audio.exchange(beat.events);
 }
 function frame(now) {
