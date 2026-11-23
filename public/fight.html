@@ -64,7 +64,7 @@
                 <div class="energy-track"><div id="energy-0"></div></div>
               </div>
               <div class="resource-line"><span>体力</span><div class="stamina-track"><div id="stamina-0"></div></div><b id="stamina-value-0">100</b></div>
-              <div class="strategy-meta"><span id="budget-0">思考 24/24</span><span id="scouted-0" hidden>已侦察</span></div>
+              <div class="strategy-meta"><span id="budget-0">思考 24/24</span><span id="scouted-0" hidden>已侦察</span><span class="edge-warning" id="edge-0" hidden></span></div>
               <p class="reason-bubble" id="reason-0">等待策略指令</p><span class="turn-status" id="status-0"></span>
             </div>
             <div class="round-clock">
@@ -86,7 +86,7 @@
                 <div class="energy-track"><div id="energy-1"></div></div>
               </div>
               <div class="resource-line"><span>体力</span><div class="stamina-track"><div id="stamina-1"></div></div><b id="stamina-value-1">100</b></div>
-              <div class="strategy-meta"><span id="budget-1">思考 24/24</span><span id="scouted-1" hidden>已侦察</span></div>
+              <div class="strategy-meta"><span id="budget-1">思考 24/24</span><span id="scouted-1" hidden>已侦察</span><span class="edge-warning" id="edge-1" hidden></span></div>
               <p class="reason-bubble" id="reason-1">等待策略指令</p><span class="turn-status" id="status-1"></span>
             </div>
           </div>
@@ -150,6 +150,7 @@
             ><select id="controller-1" aria-label="二号控制器"></select>
           </div>
           <label class="series-setting" for="series-games">系列赛场数<select id="series-games"><option value="1">1 局</option><option value="2" selected>2 局 · 换边</option><option value="4">4 局 · 轮流换边</option></select></label>
+          <label class="series-setting" for="match-seed">比赛种子（留空随机）<input id="match-seed" type="number" min="0" max="4294967295" step="1" placeholder="随机种子"></label>
           <div class="match-controls" aria-label="比赛播放控制">
             <div class="match-actions">
               <button id="start" class="primary-button" disabled>

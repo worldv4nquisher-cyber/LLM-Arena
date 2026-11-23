@@ -1,8 +1,10 @@
 import * as T from "/vendor/three.module.js";
-import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged } from "./fight-choreography.js";
+import { CONTACT, RELEASE, motion, reaction, sidestep, combatPositions, isMelee, isRanged, stunPose } from "./fight-choreography.js";
 import { buildArenaStage } from "./fight-stage.js";
 import { makeFighter } from "./fight-models.js";
-import { eventTarget } from './strategy-rules.js';
+import { eventTarget, cellPositions } from './strategy-rules.js';
+
+const startingPositions=cellPositions([2,6]);
 
 const mat = (color, extra = {}) =>
   new T.MeshStandardMaterial({ color, roughness: 0.73, ...extra });
@@ -293,6 +295,7 @@ export class FightScene {
         p = pose?.progress ?? 0;
       const direction = i ? -1 : 1;
       const { extension, windup } = motion(action, p);
+      const {droop,sway}=stunPose(action,p);
       const { recoil, blocked, down: falling } = pose
         ? reaction(pose.beat, i, p)
         : { recoil: 0, blocked: false, down: 0 };
@@ -305,18 +308,18 @@ export class FightScene {
       const melee = isMelee(action), ranged = isRanged(action);
       const attack = melee || ranged;
       const x = positions?.[i] ?? (staged ? presentation.states[i].x : entering
-        ? T.MathUtils.lerp(i ? 4.5 : -4.5, i ? 2.1 : -2.1,
+        ? T.MathUtils.lerp(i ? 4.5 : -4.5, startingPositions[i],
             T.MathUtils.smoothstep(presentation.progress, 0, 0.65))
-        : i ? 2.1 : -2.1);
+        : startingPositions[i]);
       f.root.position.set(x - direction * (recoil * (blocked ? 0.06 : 0.18) + down * 0.3),
         0.07, -evade * 0.95);
       // Keep floor rings grounded: only the jointed body crouches, recoils or falls.
       f.root.rotation.y = direction * 0.98 * (1 - down) * (victory ? 0.25 : 1);
-      f.body.position.y = down * 0.15 - evade * 0.2 + (victory ? 0.04 + Math.sin(t * 4) * 0.025 : 0);
+      f.body.position.y = down * 0.15 - evade * 0.2 - droop * 0.1 + (victory ? 0.04 + Math.sin(t * 4) * 0.025 : 0);
       f.body.rotation.set(
-        evade * 0.32 + (action === "guard" ? 0.12 : 0),
+        evade * 0.32 + droop * 0.28 + (action === "guard" ? 0.12 : 0),
         attack ? -direction * windup * 0.38 : 0,
-        direction * (-extension * 0.12 + windup * 0.15 + recoil * (blocked ? 0.1 : 0.34) + down * 1.34 - evade * 0.24),
+        direction * (-extension * 0.12 + windup * 0.15 + recoil * (blocked ? 0.1 : 0.34) + down * 1.34 - evade * 0.24 + sway),
       );
       f.arms.forEach((a, j) => {
         const lead = j === (i ? 0 : 1);
@@ -332,7 +335,7 @@ export class FightScene {
           : action === "advance" ? Math.sin(p * Math.PI * 2 + j * Math.PI) * 0.4
           : melee ? (j ? -0.25 : 0.3) * extension : 0;
       });
-      f.head.rotation.z = down ? direction * 0.18 : direction * recoil * 0.12 + Math.sin(t * 1.2 + i) * 0.025;
+      f.head.rotation.z = down ? direction * 0.18 : direction * (recoil * 0.12 + droop * 0.25) + Math.sin(t * 1.2 + i) * 0.025;
       f.head.rotation.x = down ? 0.15 : evade * 0.18;
       if (entering) {
         f.root.position.y = 0.07 + Math.abs(Math.sin(presentation.progress * 20)) * 0.08;

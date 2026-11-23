@@ -1,4 +1,4 @@
-import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary, moveCategory, eventTarget} from './public/strategy-rules.js';
+import {baseMoves, movePool, ultimates, defaultCustom, validateCustom, createState, makeView, legalMoves, resolveTurn, seededRng, planConditions, planMatches, rulesSummary, moveCategory, eventTarget, mistakeLabel} from './public/strategy-rules.js';
 import {ModelError} from './opponents.js';
 
 const freshStats = () => ({mistakes:0,decisions:0,predictionsCorrect:0,predictionsExactCorrect:0,predictions:0,feintsSuccessful:0,feintsAttempted:0,planTurns:0,budgetUsed:0,scouts:0,rounds:[],betweenRoundImprovement:[]});
@@ -17,7 +17,7 @@ async function invoke(controller, method, view, deadlines, parentSignal) {
     const result=await Promise.race([pending,stopped]);
     if(!result || typeof result!=='object' || Array.isArray(result)) throw new Error('invalid output');
     return {result};
-  } catch(e) {return {error:typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};}
+  } catch(e) {return {error:e instanceof ModelError&&e.detail==='timeout'?'timeout':typeof e?.message==='string'?e.message:'controller threw',providerFailure:controller.mode==='live'&&e instanceof ModelError};}
   finally {clearTimeout(timer);signal.removeEventListener('abort',onAbort);abort.abort();if(controller.mode==='live')await pending?.catch(()=>{});}
 }
 function decisionError(r, view) {
@@ -80,7 +80,7 @@ export async function runSeries({players,controllers,games=2,seed=1,memory=[],on
           const call=await callController(c,'decide',views[i],sides[i]);
           if(budgets[i]>0) {budgets[i]--;stats[i].budgetUsed++;}
           const error=call.error||decisionError(call.result,views[i]);
-          if(error) {stats[i].mistakes++;return {mistake:error,reason:'判断失误，失去行动机会'};}
+          if(error) {stats[i].mistakes++;return {mistake:error,reason:`${mistakeLabel(error)}，失误硬直，本拍无法行动`};}
           plans[i]=(call.result.plan||[]).map((p,index)=>({...p,step:index+1}));
           return call.result;
         }));

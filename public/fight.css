@@ -1336,7 +1336,8 @@ footer a {
 .broadcast .broadcast-highlight { top: 242px; }
 .broadcast .announcement[data-kind="entrance"], .broadcast .announcement[data-kind="outro"] { bottom: 180px; }
 .series-setting { display: block; font-size: 11px; color: #b9abc8; margin-top: 18px; }
-.series-setting select { width: 100%; padding: 10px; margin-top: 7px; background: #171421; color: #eee1fb; border: 1px solid #bca1d53d; border-radius: 4px; }
+.series-setting select, .series-setting input { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 7px; background: #171421; color: #eee1fb; border: 1px solid #bca1d53d; border-radius: 4px; }
+.strategy-meta .edge-warning { color: #ffbd83; }
 .ladder-panel, .results-panel { margin-top: 28px; padding: 23px; border: 1px solid #ba9add30; background: #211b2d99; border-radius: 10px; }
 .results-panel h2 { margin: 0 0 8px; font-size: 21px; color: #f4d9b5; }
 .ladder-panel .section-heading { margin-bottom: 12px; }

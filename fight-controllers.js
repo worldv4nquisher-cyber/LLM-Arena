@@ -56,6 +56,17 @@ export function createBuiltinController(id, {seed=1}={}) {
 }
 export const createBuiltinControllers = (options={}) => Object.fromEntries(personalities.map(id=>[id,createBuiltinController(id,options)]));
 
+export function createFlakyController(options={}) {
+  const brain=createBuiltinController('gpt',options);
+  let decisions=0;
+  return {...brain,id:'demo:flaky',label:'故障演练 · GPT（偶发非法招式）',mode:'demo',
+    async decide(view) {
+      if(decisions++%7===0) return {move:'invalid',reason:'故障演练：提交非法招式'};
+      return brain.decide(view);
+    },
+  };
+}
+
 export function parseControllerReply(content) {
   if(typeof content!=='string') return {};
   for(let start=0;start<content.length;start++) {

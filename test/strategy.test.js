@@ -46,7 +46,7 @@ test('deterministic series, replay accounting, resource and winner invariants, s
           if(b.events.some(e=>e.player===i&&e.outcome==='item'&&e.item==='heal')) hp[i]=Math.min(100,hp[i]+15);
           assert.equal(b.states[i].hp,hp[i]);
           for(const k of ['hp','energy','stamina']) assert.ok(b.states[i][k]>=0&&b.states[i][k]<=100);
-          assert.ok(Math.abs(b.states[i].x)<=3.100001);
+          assert.ok(Math.abs(b.states[i].x)<=4.450001);
           assert.equal(b.mistakes[i],null);
         }
         assert.ok(b.states[1].x-b.states[0].x>=2.2-1e-9);
