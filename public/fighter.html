@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#151321" />
+    <title>选手档案 · LLM ARENA</title>
+    <link rel="icon" href="/icon.svg" />
+    <link rel="stylesheet" href="/fight.css" />
+    <link rel="stylesheet" href="/league.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="LLM Arena 首页"><span class="brand-icon">A<span>✦</span></span><span>LLM<span class="brand-light">ARENA</span><small>让智能，真正上场。</small></span></a>
+      <nav aria-label="主导航"><a href="/">竞技场</a><a href="/#league">联赛</a><a href="/replays">回放库</a><a class="active" href="/fighter?id=gpt">选手档案</a></nav>
+      <div class="season"><span class="status-dot"></span> FIGHTER FILE</div>
+    </header>
+    <main class="page-shell">
+      <nav class="fighter-switch filters" id="fighter-switch" aria-label="切换选手"></nav>
+      <section class="fighter-hero" id="fighter-hero">
+        <div class="fighter-stage" id="fighter-stage"><div class="fallback" id="fighter-fallback">✦</div></div>
+        <div class="fighter-info">
+          <div class="eyebrow" id="fighter-provider">FIGHTER</div>
+          <h1 id="fighter-name">选手<small id="fighter-title"></small></h1>
+          <div class="fighter-meta" id="fighter-meta"></div>
+          <div class="stat-cards" id="fighter-cards"></div>
+          <p class="empty" id="fighter-note">内置策略的战绩仅用于验证联赛框架；真实模型加入后将重置。</p>
+        </div>
+      </section>
+      <div class="fighter-grid">
+        <section class="panel radar"><h2>能力雷达 <span>ABILITY</span></h2><div id="fighter-radar"></div></section>
+        <section class="panel trend"><h2>等级分走势 <span>RATING</span></h2><div id="fighter-trend"></div><div id="fighter-seasons" class="tier-moves"></div></section>
+        <section class="panel"><h2>对手交锋 <span>HEAD TO HEAD</span></h2><div class="table-scroll" id="fighter-h2h"></div></section>
+        <section class="panel"><h2>近期比赛 <span>RECENT</span></h2><div class="match-list" id="fighter-matches"></div></section>
+      </div>
+    </main>
+    <script type="module" src="/fighter.js"></script>
+  </body>
+</html>

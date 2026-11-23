@@ -3,6 +3,7 @@ import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel, cellPosition
 import { buildBroadcast, broadcastAt, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
+import { mountLeague } from './league-ui.js';
 
 const $ = id => document.getElementById(id), audio = new ArenaAudio();
 const players = [$('player-0'),$('player-1')], controls = [$('controller-0'),$('controller-1')];
@@ -12,7 +13,7 @@ const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map
 const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
 const fighter = id => fighters.find(f=>f.id===id);
 let scene, replay, timeline, controllers=[], history=[], elapsed=0, playing=false, loading=false, finished=false;
-let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[];
+let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[], leagueMatch=null, league;
 const config = side => fighter(replay&&currentGame>=0 ? replay.players[replay.games[currentGame].sides[side]] : players[side].value);
 const pct = n => `${(n*100).toFixed(1)}%`, delta = n => `${n>=0?'+':''}${(n*100).toFixed(1)}pp`;
 function node(tag,text,className) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;}
@@ -42,7 +43,7 @@ function updateStats(states=[0,1].map(()=>({hp:100,energy:0,stamina:100,budgetLe
 }
 function lock(locked) {[...players,...controls,$('series-games'),$('match-seed'),...document.querySelectorAll('.roster-card')].forEach(e=>e.disabled=locked);}
 function reset() {
-  replay=null;playing=false;finished=false;elapsed=0;currentGame=-1;lastBeat='';lastPhase='';
+  replay=null;leagueMatch=null;venue();playing=false;finished=false;elapsed=0;currentGame=-1;lastBeat='';lastPhase='';
   scene?.setFighters(players.map(p=>fighter(p.value)));if(scene){scene.pose=null;scene.presentation=null;}
   updateNames();updateStats();
   for(const id of ['draft-card','review-card','series-results','broadcast-highlight'])$(id).hidden=true;
@@ -72,8 +73,26 @@ function resetEntrance(game) {
   const status=entranceStatus(game);
   $('clock').textContent=status.clock;$('round-label').textContent=status.roundLabel;$('range-band').textContent=status.rangeLabel;$('feed-counter').textContent=status.feedCounter;
 }
-function begin() {
-  timeline=buildBroadcast(replay);cues=playbackCues(timeline);elapsed=0;playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
+function venue() {
+  const e=$('broadcast-venue');e.replaceChildren();
+  if(leagueMatch){e.append(`联赛 · 第${leagueMatch.season}赛季 第${leagueMatch.round}轮 `,node('i','✦'),leagueMatch.status==='live'?' 直播':' 回放');e.classList.toggle('league-live-tag',leagueMatch.status==='live');}
+  else{e.append('星穹庭院 ',node('i','✦'),' 黄昏');e.classList.remove('league-live-tag');}
+}
+async function watchLeague(id) {
+  if(loading||!scene)return;
+  try{
+    const data=await json(`/api/league/matches/${encodeURIComponent(id)}`);
+    if(!data.replay)throw new Error(['live','done'].includes(data.match.status)?'这场比赛的回放已被清理。':'比赛尚未开赛，开赛后即可进入直播。');
+    playing=false;lock(false);players.forEach((p,i)=>p.value=data.replay.players[i]);
+    controls.forEach((c,i)=>{if(controllers.some(x=>x.id===data.replay.controllers[i]))c.value=data.replay.controllers[i];});
+    $('series-games').value=String(data.replay.games.length);
+    replay=data.replay;leagueMatch=data.match;venue();
+    begin(data.match.status==='live'?Math.max(0,(data.serverNow-data.match.startedAt)/1000):0);
+    $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
+  }catch(error){announce('无法观看联赛',error.message);}
+}
+function begin(offset=0) {
+  timeline=buildBroadcast(replay);cues=playbackCues(timeline);elapsed=Math.min(offset,Math.max(0,timeline.duration-0.1));playing=true;finished=false;lastFrame=undefined;lastBeat='';lastPhase='';currentGame=-1;
   scene.resetPose();scene.paused=false;$('series-results').hidden=true;$('battle-feed').replaceChildren();$('pause').disabled=false;$('pause').textContent='Ⅱ 暂停';$('replay').disabled=false;$('start').textContent='↻ 重新开赛';lock(true);
   resetEntrance(replay.games[0]);
 }
@@ -81,7 +100,7 @@ function historyControls() {document.querySelectorAll('.history-replay').forEach
 async function startMatch(seed) {
   if(loading||!scene||!controllers.length)return;
   if(seed===undefined){if(!$('match-seed').reportValidity())return;if($('match-seed').value!=='')seed=Number($('match-seed').value);}
-  loading=true;playing=false;lock(true);$('start').disabled=true;$('edit-settings').disabled=true;$('pause').disabled=true;$('replay').disabled=true;
+  loading=true;playing=false;leagueMatch=null;venue();lock(true);$('start').disabled=true;$('edit-settings').disabled=true;$('pause').disabled=true;$('replay').disabled=true;
   for(const id of ['draft-card','review-card','series-results'])$(id).hidden=true;
   historyControls();announce('后台计算中','正在创建系列赛…');
   try {
@@ -97,7 +116,7 @@ function renderHistory() {
     const row=node('div',undefined,'history-row'),button=node('button','回看比赛 ↗','history-replay');
     button.addEventListener('click',()=>{
       if(loading||!scene)return;playing=false;lock(false);players.forEach((p,i)=>p.value=m.players[i]);
-      if(m.replay){replay=m.replay;begin();}
+      leagueMatch=null;venue();if(m.replay){replay=m.replay;begin();}
       else if(m.controllers.every(id=>controllers.some(c=>c.id===id))){controls.forEach((c,i)=>c.value=m.controllers[i]);$('series-games').value=String(m.games);startMatch(m.seed);}
       else announce('控制器未配置','这场比赛使用的真实模型当前不可用。');
       $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
@@ -124,12 +143,12 @@ function finish() {
   for(const id of ['draft-card','review-card','broadcast-highlight'])$(id).hidden=true;$('broadcast').dataset.phase='complete';
   const game=replay.games.at(-1),winner=replay.series.winner;
   scene.pose=null;scene.presentation={type:'result',states:game.rounds.at(-1).beats.at(-1).states,winner:winner===null?null:game.sides.indexOf(winner)};
-  announce(winner===null?'系列赛 · 平局':`${fighter(replay.players[winner]).name} 获胜`,`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛`,'SERIES COMPLETE','result');
+  announce(winner===null?'系列赛 · 平局':`${fighter(replay.players[winner]).name} 获胜`,`${replay.series.wins.join(' : ')} · ${replay.games.length} 局系列赛`,leagueMatch?`LEAGUE · SEASON ${leagueMatch.season} · ROUND ${leagueMatch.round}`:'SERIES COMPLETE','result');
   $('commentary').textContent='策略已见分晓。下方查看双方能力统计与完整系列赛比分。';resultTable();audio.victory();scene.stage.react(1.8);
   const record={players:replay.players,controllers:replay.controllers,games:replay.games.length,wins:replay.series.wins,seed:replay.seed,replay};
   history=[record,...history.filter(m=>m.seed!==record.seed||String(m.players)!==String(record.players)||String(m.controllers)!==String(record.controllers)||m.games!==record.games)].slice(0,8);
   try{localStorage.setItem('celestial-strategy-matches',JSON.stringify(history));}catch{/* Playback also works without storage. */}
-  renderHistory();refreshLadder();
+  renderHistory();refreshLadder();league?.refresh();
 }
 function beatDetails(beat,round,index) {
   updateStats(beat.states,round.round>1?replay.games[currentGame].rounds[round.round-2].wins:[0,0]);
@@ -190,6 +209,8 @@ reset();renderHistory();requestAnimationFrame(frame);
 try{
   controllers=await json('/api/controllers');if(!controllers.length)throw new Error('没有可用控制器');controls.forEach((s,i)=>{controllers.forEach(c=>s.append(option(c.id,c.label)));s.value=`builtin:${players[i].value}`;});
   const {FightScene}=await import('./fight-scene.js');scene=new FightScene($('scene'),players.map(p=>fighter(p.value)));$('loading-scene').remove();$('start').disabled=false;historyControls();
+  const requested=new URLSearchParams(location.search).get('match');if(requested)watchLeague(requested);
   $('scene').addEventListener('rendererror',()=>{playing=false;$('start').disabled=true;$('pause').disabled=true;announce('3D 画面已中断','请刷新页面重新连接渲染器。');});
 }catch(error){$('loading-scene').textContent='无法初始化比赛，请检查连接与 WebGL 支持。';announce('暂时无法载入',error.message);console.error('Arena initialization failed:',error);}
 refreshLadder();
+league=mountLeague({onWatch:watchLeague});

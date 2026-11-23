@@ -83,6 +83,22 @@ POST只接受本站JSON请求。真实模型对局最多同时1场，与经典�
 
 能力统计按累计计数加权；回合间提升同时显示各自伤害份额和类别预判率的平均变化（百分点）。预判只统计实际提交的预测：`predictionExactHitRate`要求招式ID完全一致；`predictionCategoryHitRate`（页面展示，亦为`predictionHitRate`）在ID一致或类别一致时命中。类别为`attack/throw/defend/move/feint/scout/rest`，格挡、招架、闪避、屏障统一归入`defend`；预测具体招式时也按它所属类别计分。旧天梯保留胜负等历史，但新的精确/类别预判率只从升级后的比赛累计，不把旧评分混入新口径。连招执行会显示计划步号、条件和招式。
 
+## 自动联赛
+
+服务启动即运行联赛（`LEAGUE=off`关闭）：五名选手单循环，每场两局换边系列赛，胜3分、平1分；一轮循环为一个赛季，结束时产生冠军，前两名晋级、后两名降级（青铜→星穹六段）。等级分为国际象棋Elo（初始1500，K=32，按每局结算）。比赛在后台提前计算、按时间轴“直播”：首页显示赛程、积分榜和正在进行的比赛，进入直播会从当前进度开始播放3D画面；赛间45秒、赛季间90秒。
+
+每名选手默认使用内置策略，与真实模型走同一回合接口；`LEAGUE_ROSTER=gpt=openai:模型ID,...`可替换为已配置的真实模型控制器。内置战绩只用于验证框架，真实模型加入前用`POST /api/league/reset`（需`Authorization: Bearer $LEAGUE_ADMIN_TOKEN`）清空联赛、回放与天梯。状态与最近400场回放保存在被git忽略的`data/league/`。
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/league` | 当前赛季赛程、积分榜、直播/下一场、上赛季冠军与升降级、全部等级分 |
+| GET | `/api/league/matches?season=&fighter=` | 回放库：已完成及直播中的比赛 |
+| GET | `/api/league/matches/:id` | 比赛信息与完整回放（直播中亦可） |
+| GET | `/api/league/fighters/:id` | 选手档案：战绩、能力雷达、等级分走势、交锋记录、赛季记录 |
+| POST | `/api/league/reset` | 管理员重置联赛 |
+
+页面：`/fighter?id=gpt`选手档案，`/replays`回放库，`/?match=<id>`直接观看某场联赛。
+
 ## 真实模型配置与限制
 
 复制`.env.example`为`.env`并填写密钥/模型ID，然后：
