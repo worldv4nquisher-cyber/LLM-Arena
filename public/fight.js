@@ -16,7 +16,7 @@ const moveNames = Object.fromEntries([...baseMoves,...movePool,...ultimates].map
 const moveName = id => moveNames[id] || ({custom:'自创招',attack:'打击',defend:'防守',move:'移动',stunned:'硬直'}[id]) || id || '未预判';
 const fighter = id => fighters.find(f=>f.id===id);
 let scene, replay, timeline, controllers=[], history=[], elapsed=0, playing=false, loading=false, finished=false;
-let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[], leagueMatch=null, league;
+let lastFrame, lastBeat='', lastPhase='', currentGame=-1, cues=[], leagueMatch=null, liveView=false, league;
 let reel=null,showingReel=false,lastClip=null;
 const config = side => fighter(replay&&currentGame>=0 ? replay.players[replay.games[currentGame].sides[side]] : players[side].value);
 const pct = n => `${(n*100).toFixed(1)}%`, delta = n => `${n>=0?'+':''}${(n*100).toFixed(1)}pp`;
@@ -79,9 +79,10 @@ function resetEntrance(game) {
   $('clock').textContent=status.clock;$('round-label').textContent=status.roundLabel;$('range-band').textContent=status.rangeLabel;$('feed-counter').textContent=status.feedCounter;
 }
 function venue() {
-  danmaku.watch(leagueMatch?.status==='live'?leagueMatch.id:null);
+  const live=liveView&&leagueMatch?.status==='live';
+  danmaku.watch(live?leagueMatch.id:null);
   const e=$('broadcast-venue');e.replaceChildren();
-  if(leagueMatch){e.append(`联赛 · 第${leagueMatch.season}赛季 第${leagueMatch.round}轮 `,node('i','✦'),leagueMatch.status==='live'?' 直播':' 回放');e.classList.toggle('league-live-tag',leagueMatch.status==='live');}
+  if(leagueMatch){e.append(`联赛 · 第${leagueMatch.season}赛季 第${leagueMatch.round}轮 `,node('i','✦'),live?' 直播':' 回放');e.classList.toggle('league-live-tag',live);}
   else{e.append('星穹庭院 ',node('i','✦'),' 黄昏');e.classList.remove('league-live-tag');}
 }
 async function watchLeague(id) {
@@ -92,8 +93,8 @@ async function watchLeague(id) {
     playing=false;lock(false);players.forEach((p,i)=>p.value=data.replay.players[i]);
     controls.forEach((c,i)=>{if(controllers.some(x=>x.id===data.replay.controllers[i]))c.value=data.replay.controllers[i];});
     $('series-games').value=String(data.replay.games.length);
-    replay=data.replay;leagueMatch=data.match;venue();
-    begin(data.match.status==='live'?Math.max(0,(data.serverNow-data.match.startedAt)/1000):0);
+    replay=data.replay;leagueMatch=data.match;liveView=data.match.status==='live';venue();
+    begin(liveView?Math.max(0,(data.serverNow-data.match.startedAt)/1000):0);
     $('broadcast').scrollIntoView({block:'start',behavior:'smooth'});
   }catch(error){announce('无法观看联赛',error.message);}
 }
@@ -102,6 +103,7 @@ function clearHighlights() {
   $('highlight-play').hidden=true;$('highlight-skip').hidden=true;
 }
 function offerHighlights() {
+  if(leagueMatch&&leagueMatch.status!=='done')return;
   reel??=buildHighlights(timeline);
   $('highlight-play').hidden=!reel.count;
 }
@@ -236,7 +238,7 @@ function frame(now) {
 }
 $('start').addEventListener('click',()=>startMatch());
 $('edit-settings').addEventListener('click',()=>{if(loading)return;lock(false);reset();players[0].focus();});
-$('replay').addEventListener('click',()=>{if(replay&&!loading){if(leagueMatch?.status==='live'){leagueMatch={...leagueMatch,status:'done'};venue();}begin();}});
+$('replay').addEventListener('click',()=>{if(replay&&!loading){liveView=false;venue();begin();}});
 $('highlight-play').addEventListener('click',()=>{
   if(!reel?.count||loading||showingReel)return;
   voice.stop();showingReel=true;lastClip=null;timeline=reel;beginPlayback();
@@ -262,4 +264,9 @@ try{
   $('scene').addEventListener('rendererror',()=>{playing=false;$('start').disabled=true;$('pause').disabled=true;announce('3D 画面已中断','请刷新页面重新连接渲染器。');});
 }catch(error){$('loading-scene').textContent='无法初始化比赛，请检查连接与 WebGL 支持。';announce('暂时无法载入',error.message);console.error('Arena initialization failed:',error);}
 refreshLadder();
-league=mountLeague({onWatch:watchLeague,onUpdate:({live})=>{if(leagueMatch?.status==='live'&&leagueMatch.id!==live?.id)danmaku.watch(null);}});
+league=mountLeague({onWatch:watchLeague,onUpdate:({live,season})=>{
+  if(leagueMatch?.status!=='live'||leagueMatch.id===live?.id)return;
+  const match=season?.matches.find(m=>m.id===leagueMatch.id);
+  if(match){leagueMatch=match;venue();if(finished)offerHighlights();}
+  else danmaku.watch(null);
+}});
