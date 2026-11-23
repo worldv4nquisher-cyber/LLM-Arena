@@ -219,3 +219,18 @@ test('live danmaku reaches both viewers, sanitizes content and rate-limits sende
   assert.equal((await post(live.id,'好比赛')).status,409);
   await Promise.all(readers.map(reader=>reader.cancel()));
 });
+
+test('one caller cannot exhaust the shared danmaku stream pool', async t => {
+  const app=createArena({env:{},ladder:createLadder({path:null}),league:{path:null,autostart:false,firstDelay:0}});
+  app.listen(0,'127.0.0.1');
+  await once(app,'listening');
+  const abort=new AbortController();
+  t.after(()=>{abort.abort();return new Promise(resolve=>app.close(resolve));});
+  await app.league.tick();await app.league.computing;await app.league.tick();
+  const {live}=await app.league.snapshot();
+  const url=`http://127.0.0.1:${app.address().port}/api/league/matches/${live.id}/danmaku`;
+  const streams=await Promise.all(Array.from({length:8},()=>fetch(url,{signal:abort.signal})));
+  assert.ok(streams.every(response=>response.status===200));
+  assert.equal((await fetch(url,{headers:{'X-Forwarded-For':'192.0.2.1'}})).status,429);
+  await Promise.all(streams.map(response=>response.body.cancel()));
+});

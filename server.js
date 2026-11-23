@@ -123,7 +123,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
       const [,id,kind]=m;
       if(req.method==='GET'&&kind==='danmaku'){
         if(req.headers['sec-fetch-site']==='cross-site')return json(res,403,{error:'仅接受本站的请求。'});
-        return danmaku.stream(id,res);
+        return danmaku.stream(id,req.socket.remoteAddress,res);
       }
       if(req.method==='POST'){
         if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 请求。'});
