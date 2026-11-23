@@ -86,6 +86,17 @@ export function tierChanges(final,ratings) {
 
 const publicMatch=(m,now)=>({id:m.id,season:m.season,round:m.round,order:m.order,players:m.players,controllers:m.controllers,status:m.status==='computing'||m.status==='ready'?'scheduled':m.status,computing:m.status==='computing',ready:m.status==='ready',startedAt:m.startedAt??null,endsAt:m.endsAt??null,duration:m.status==='live'||m.status==='done'?m.duration:null,elapsed:m.status==='live'?Math.max(0,now-m.startedAt):null,error:m.error,...(m.status==='done'?{result:m.result}:{})});
 
+function predictionOutcome(m,pick) {
+  if(pick===null||m.status!=='done'&&m.status!=='void')return null;
+  if(m.status==='void')return 'void';
+  return m.result.winner===null?'draw':pick===m.result.winner?'correct':'wrong';
+}
+function predictionFor(m,spectator) {
+  const votes=[0,0],pick=m.picks?.[spectator]??null;
+  for(const side of Object.values(m.picks??{}))votes[side]++;
+  return {votes,pick,outcome:predictionOutcome(m,pick)};
+}
+
 export function createLeague({path=new URL('./data/league/',import.meta.url),run,now=Date.now,intermission=45000,seasonBreak=90000,firstDelay=5000,roster,ladder,interval=1000,autostart=true,keepReplays=400}={}) {
   const root=path===null?null:path instanceof URL?fileURLToPath(path):path;
   const replays=new Map();
@@ -181,23 +192,48 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     return Object.fromEntries(season.matches.filter(m=>['scheduled','computing','ready'].includes(m.status)).map(m=>{const start=t;t+=(m.duration||avg)+intermission;return [m.id,start];}));
   };
   const allMatches=()=>state.seasons.flatMap(s=>s.matches);
+  function spectatorScore(spectator) {
+    let points=0,streak=0,last=null;
+    for(const m of allMatches()){
+      const pick=m.picks?.[spectator]??null,outcome=predictionOutcome(m,pick);
+      if(!outcome)continue;
+      if(outcome==='correct'){points++;streak++;}
+      else if(outcome==='wrong')streak=0;
+      last={id:m.id,player:m.players[pick],outcome};
+    }
+    return {points,streak,last};
+  }
   function fighterAggregate(id,matches) {
     const agg=emptyAgg();for(const m of matches){const i=m.players.indexOf(id);if(i>=0)addAgg(agg,m.result.stats[i]);}return agg;
   }
   const api={
     tick,
     get computing(){return computing;},
-    async snapshot() {
+    async snapshot(spectator) {
       await ready;const at=now(),season=state.seasons.at(-1);
       if(!season)return {now:at,season:null,live:null,next:null,tiers,ratings:[],previous:null,seasons:[]};
       const times=season.status==='active'?estimate(season,at):{};
-      const matches=season.matches.map(m=>({...publicMatch(m,at),estimatedStart:times[m.id]??null}));
+      const matches=season.matches.map(m=>({...publicMatch(m,at),estimatedStart:times[m.id]??null,prediction:predictionFor(m,spectator)}));
       const previous=[...state.seasons].reverse().find(s=>s.status==='complete');
-      return {now:at,tiers,season:{number:season.number,status:season.status,startedAt:season.startedAt,endedAt:season.endedAt??null,nextAt:season.nextAt,matches,standings:seasonStandings(season,state.ratings),played:season.matches.filter(m=>m.status==='done').length,total:season.matches.length},
+      return {now:at,tiers,...(spectator?{spectator:spectatorScore(spectator)}:{}),season:{number:season.number,status:season.status,startedAt:season.startedAt,endedAt:season.endedAt??null,nextAt:season.nextAt,matches,standings:seasonStandings(season,state.ratings),played:season.matches.filter(m=>m.status==='done').length,total:season.matches.length},
         live:matches.find(m=>m.status==='live')??null,next:matches.find(m=>m.status==='scheduled')??null,
         ratings:Object.entries(state.ratings).map(([id,r])=>({id,rating:Math.round(r.rating),tier:r.tier,peak:Math.round(r.peak)})).sort((a,b)=>b.rating-a.rating),
         previous:previous?{number:previous.number,champion:previous.champion,final:previous.final,changes:previous.changes,endedAt:previous.endedAt}:null,
         seasons:state.seasons.map(s=>({number:s.number,status:s.status,champion:s.champion??null}))};
+    },
+    async predict(id,spectator,side) {
+      await ready;
+      const m=allMatches().find(x=>x.id===id);
+      if(!m)return {status:404,data:{error:'找不到联赛比赛。'}};
+      if(!['scheduled','computing','ready'].includes(m.status))return {status:409,data:{error:'本场竞猜已关闭。'}};
+      (m.picks??={})[spectator]=side;
+      const data=predictionFor(m,spectator);
+      await persist();
+      return {status:200,data};
+    },
+    async isLive(id) {
+      await ready;
+      return !!state.seasons.at(-1)?.matches.some(m=>m.id===id&&m.status==='live'&&now()<m.endsAt);
     },
     async library({season,fighter}={}) {
       await ready;const at=now();

@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/fight.css" />
     <link rel="stylesheet" href="/fight-broadcast.css" />
     <link rel="stylesheet" href="/league.css" />
+    <link rel="stylesheet" href="/fight-spectator.css" />
   </head>
   <body>
     <header class="topbar">
@@ -43,6 +44,7 @@
         <section class="broadcast" id="broadcast" aria-label="3D 比赛直播">
           <div id="scene"><div id="loading-scene">正在点亮星穹擂台…</div></div>
           <div class="scene-vignette"></div>
+          <div id="danmaku-overlay" aria-hidden="true"></div>
           <div class="broadcast-top">
             <span
               ><i class="status-dot"></i>
@@ -98,6 +100,7 @@
           <div id="damage-0" class="damage left"></div>
           <div id="damage-1" class="damage right"></div>
           <div id="broadcast-highlight" class="broadcast-highlight" hidden>关键命中 · 慢镜</div>
+          <button id="highlight-skip" class="highlight-skip" hidden>跳过高光 ⏭</button>
           <section id="draft-card" class="strategy-card" hidden aria-label="赛前选招"></section>
           <section id="review-card" class="strategy-card" hidden aria-label="回合复盘"></section>
           <div id="stage-ticker" class="stage-ticker" aria-live="polite">场地平静 · 九格战场</div>
@@ -176,6 +179,17 @@
           <p class="mode-note">
             内置策略免费；已配置的真实模型按回合调用并产生费用。<br />空格 暂停 · R 重播 · 1/2/3 机位
           </p>
+          <div class="spectator-tools" aria-label="观赛工具">
+            <button id="voice-commentary" aria-pressed="false">语音解说关</button>
+            <button id="danmaku-toggle" aria-pressed="true">弹幕显示</button>
+            <button id="highlight-play" hidden>播放高光集锦 ▶</button>
+            <form id="danmaku-form" hidden>
+              <label for="danmaku-input">联赛直播弹幕</label>
+              <input id="danmaku-input" type="text" maxlength="120" placeholder="最多 60 字" required>
+              <button type="submit" disabled>发送</button>
+              <span id="danmaku-status" role="status"></span>
+            </form>
+          </div>
           <div class="feed-heading">
             <h3>场边速报</h3>
             <span id="feed-counter">READY</span>
@@ -189,7 +203,18 @@
         <div class="section-heading"><h2>自动联赛 <span>AUTO LEAGUE</span><b id="league-title"></b></h2><a class="league-link" href="/replays">回放库 ↗</a></div>
         <p id="league-status" class="league-status" role="status">正在读取联赛…</p>
         <div class="league-grid">
-          <div class="league-main"><div id="league-live" class="league-live"></div><div id="league-previous" class="league-previous" hidden></div><h3 class="league-subhead">积分榜 <span>STANDINGS</span></h3><div id="league-standings"></div></div>
+          <div class="league-main"><div id="league-live" class="league-live"></div>
+            <section id="league-prediction" class="league-prediction" hidden aria-labelledby="prediction-title">
+              <h3 id="prediction-title">赛前竞猜</h3>
+              <p id="prediction-score"></p>
+              <label for="prediction-match">选择联赛场次</label>
+              <select id="prediction-match"></select>
+              <div class="prediction-picks"><button aria-pressed="false"></button><button aria-pressed="false"></button></div>
+              <div class="prediction-bar" aria-hidden="true"><span></span><span></span></div>
+              <p id="prediction-tally"></p>
+              <p id="prediction-status" role="status"></p>
+            </section>
+            <div id="league-previous" class="league-previous" hidden></div><h3 class="league-subhead">积分榜 <span>STANDINGS</span></h3><div id="league-standings"></div></div>
           <div><h3 class="league-subhead">赛程 <span>SCHEDULE</span></h3><div id="league-schedule"></div></div>
         </div>
       </section>

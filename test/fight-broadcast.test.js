@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { simulateFight } from "../public/fight-engine.js";
-import { buildBroadcast, broadcastAt, isKeyHit, roundCall, entranceStatus } from "../public/fight-broadcast.js";
+import { buildBroadcast, broadcastAt, buildHighlights, describeExchange, isKeyHit, roundCall, entranceStatus } from "../public/fight-broadcast.js";
+import { mountVoice } from "../public/fight-spectator.js";
 
 test('entrance status clears prior clock, range and feed for replay and swapped drafts',()=>{
   for(const sides of [[0,1],[1,0]]) {
@@ -88,4 +89,62 @@ test("strategy series concatenates every game with distinct side and round conte
   assert.equal(broadcastAt(timeline,timeline.duration).type,'complete');
   assert.deepEqual(replay,original);
   assert.deepEqual(buildBroadcast({games:[]}),{segments:[],duration:0});
+});
+
+test("highlights stitch nonoverlapping key exchanges in chronological order", () => {
+  const hit=(player,damage,hp,planned=false)=>({
+    states:hp.map(hp=>({hp})),events:[{player,damage,action:'strike',outcome:'hit'}],
+    planDriven:[planned,false],
+  });
+  const wait=hp=>({states:hp.map(hp=>({hp})),events:[]});
+  const rounds=[
+    {round:1,winner:0,beats:[hit(1,30,[70,100]),wait([70,100]),wait([90,100]),hit(0,8,[90,92]),hit(0,8,[90,84]),wait([90,84]),hit(0,6,[90,78]),hit(0,6,[90,72],true)]},
+    {round:2,winner:0,beats:[hit(0,40,[100,60]),wait([100,60]),wait([100,60]),hit(0,60,[100,0])]},
+  ];
+  const replay={games:[{sides:[1,0],rounds}]},original=structuredClone(replay);
+  const reel=buildHighlights(buildBroadcast(replay));
+  const clips=[...new Set(reel.segments.map(s=>s.highlight))];
+  assert.equal(reel.count,4);
+  assert.deepEqual(clips.map(c=>c.title),['逆风反超','连续命中','重击命中','终结击倒']);
+  assert.equal(reel.segments[0].start,0);
+  assert.ok(reel.segments.every((s,i,a)=>i===0||Math.abs(s.start-a[i-1].end)<1e-9));
+  const final=reel.segments.at(-1);
+  assert.equal(broadcastAt(reel,final.start+0.9).slowMotion,true);
+  assert.deepEqual(broadcastAt(reel,final.start).game.sides,[1,0]);
+  assert.equal(broadcastAt(reel,reel.duration).type,'complete');
+  assert.deepEqual(replay,original);
+});
+
+test("play-by-play follows exchange outcomes and correct player/target sides", () => {
+  const names=['甲','乙'],events=[
+    {player:1,action:'ultimate',outcome:'hit',damage:23},
+    {player:null,target:1,action:'blast',outcome:'danger',damage:6},
+    {player:0,action:'guard',outcome:'item',damage:0},
+  ];
+  assert.equal(describeExchange({events},names),'乙绝技命中，甲损失23点生命；乙踩中危险区，损失6点生命；甲拾取道具。');
+  assert.equal(describeExchange({events:[]},names),'甲与乙继续试探，暂无伤害。');
+});
+
+test("voice starts muted, uses zh-CN, cancels on mute and degrades to captions", () => {
+  const button=()=>Object.assign(new EventTarget(),{setAttribute(key,value){this[key]=value;}});
+  const on=button(),calls=[];
+  const speaking=mountVoice(on,{
+    SpeechSynthesisUtterance:class {constructor(text){this.text=text;}},
+    speechSynthesis:{getVoices:()=>[],speak:utterance=>calls.push(utterance),cancel:()=>calls.push('cancel')},
+  });
+  speaking.say('开赛');
+  assert.deepEqual(calls,[]);
+  on.dispatchEvent(new Event('click'));
+  speaking.say('重击',true);
+  assert.equal(calls.at(-1).lang,'zh-CN');
+  assert.equal(calls.at(-1).text,'重击');
+  on.dispatchEvent(new Event('click'));
+  assert.equal(on['aria-pressed'],'false');
+  assert.equal(calls.at(-1),'cancel');
+  speaking.say('准备');
+  assert.equal(calls.at(-1),'cancel');
+  const off=button(),captions=mountVoice(off,{});
+  captions.say('准备',true);
+  assert.equal(off.disabled,true);
+  assert.equal(off.textContent,'仅文字解说');
 });

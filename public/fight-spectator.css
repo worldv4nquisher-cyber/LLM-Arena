@@ -1,0 +1,84 @@
+.spectator-tools, .league-prediction {
+  padding: 12px;
+  border: 1px solid #c3b0fc33;
+  border-radius: 8px;
+  background: #211b31;
+  color: #e4d4fa;
+  font-size: 12px;
+}
+.spectator-tools { grid-column: 1 / -1; margin-top: 12px; }
+.spectator-tools button, .prediction-picks button {
+  padding: 7px 10px;
+  border: 1px solid #cfb5ff55;
+  border-radius: 5px;
+  background: #312542;
+  color: #f4e6ff;
+}
+.spectator-tools button[aria-pressed="true"], .prediction-picks button[aria-pressed="true"] {
+  background: #594079;
+  border-color: #c8a3ff;
+}
+#danmaku-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+#danmaku-form[hidden], .league-prediction[hidden] { display: none; }
+#danmaku-form label, #danmaku-status { flex: 0 0 100%; }
+#danmaku-input, #prediction-match {
+  border: 1px solid #c3b0fc55;
+  border-radius: 4px;
+  padding: 7px 8px;
+  color: #f4e6ff;
+  background: #181423;
+}
+#danmaku-input { min-width: 0; flex: 1; }
+#danmaku-overlay {
+  position: absolute;
+  inset: 34% 0 30%;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.danmaku-comment {
+  position: absolute;
+  left: 100%;
+  top: var(--lane, 0);
+  width: max-content;
+  max-width: none;
+  white-space: nowrap;
+  color: #fff3d0;
+  font-size: clamp(12px, 1.4vw, 17px);
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #201629ce;
+  animation: danmaku-slide 7s linear forwards;
+}
+.danmaku-comment[data-lane="1"] { --lane: 14%; }
+.danmaku-comment[data-lane="2"] { --lane: 28%; }
+.danmaku-comment[data-lane="3"] { --lane: 42%; }
+@keyframes danmaku-slide { to { left: 0; transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .danmaku-comment { left: auto; right: 4%; white-space: normal; max-width: 90%; animation: danmaku-fade 4s linear forwards; }
+  @keyframes danmaku-fade { 90% { opacity: 1; } to { opacity: 0; } }
+}
+.league-prediction { display: grid; gap: 7px; margin-top: 12px; }
+.league-prediction h3, .league-prediction p { margin: 0; }
+.league-prediction h3 { color: #ffdbac; }
+.prediction-picks { display: flex; gap: 8px; }
+.prediction-picks button { flex: 1; }
+.prediction-bar { display: grid; grid-template-columns: var(--vote-share, 50%) 1fr; height: 5px; overflow: hidden; border-radius: 5px; }
+.prediction-bar span:first-child { background: #ba96ff; }
+.prediction-bar span:last-child { background: #ffc384; }
+#prediction-score, #prediction-tally, #prediction-status { color: #cbb8e3; }
+.highlight-skip {
+  position: absolute;
+  z-index: 4;
+  right: 22px;
+  bottom: 185px;
+  padding: 9px 13px;
+  border: 1px solid #ffc38488;
+  border-radius: 5px;
+  background: #312542ee;
+  color: #ffddb1;
+}
+@media (max-width: 800px) {
+  .highlight-skip { right: 12px; bottom: 207px; }
+}

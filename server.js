@@ -10,6 +10,7 @@ import { createBuiltinController, createFlakyController, personalities, liveCont
 import { runSeries } from './fight-match.js';
 import { createLadder } from './fight-ladder.js';
 import { createLeague } from './fight-league.js';
+import { createDanmaku } from './fight-danmaku.js';
 
 const assets = new Map([
   ['/', ['fight.html', 'text/html; charset=utf-8']],
@@ -24,6 +25,8 @@ const assets = new Map([
   ['/fight-engine.js', ['fight-engine.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.js', ['fight-broadcast.js', 'text/javascript; charset=utf-8']],
   ['/fight-broadcast.css', ['fight-broadcast.css', 'text/css; charset=utf-8']],
+  ['/fight-spectator.js', ['fight-spectator.js', 'text/javascript; charset=utf-8']],
+  ['/fight-spectator.css', ['fight-spectator.css', 'text/css; charset=utf-8']],
   ['/fighter', ['fighter.html', 'text/html; charset=utf-8']],
   ['/replays', ['replays.html', 'text/html; charset=utf-8']],
   ['/league.css', ['league.css', 'text/css; charset=utf-8']],
@@ -43,6 +46,8 @@ function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(value));
 }
+
+const validSpectator = id => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id);
 
 async function matchInput(req) {
   const chunks = [];
@@ -100,16 +105,36 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     catch(error){throw new Error(error instanceof ModelError?error.message:'比赛计算失败。');}
     finally{if(isLive)liveInProgress=false;}
   }}):null;
+  const danmaku=league?createDanmaku(league,leagueOptions.now):null;
   const leagueRoute=async(req,res,path)=>{
     if(!league)return json(res,404,{error:'联赛未启用。'});
     const query=new URL(req.url,'http://local').searchParams;
-    if(req.method==='GET'&&path==='/api/league')return json(res,200,await league.snapshot());
+    if(req.method==='GET'&&path==='/api/league'){
+      const spectator=query.get('spectator');
+      return json(res,200,await league.snapshot(validSpectator(spectator)?spectator:undefined));
+    }
     if(req.method==='GET'&&path==='/api/league/matches'){
       const season=query.has('season')?Number(query.get('season')):undefined,fighter=query.get('fighter')||undefined;
       if(season!==undefined&&!Number.isSafeInteger(season))return json(res,400,{error:'赛季无效。'});
       return json(res,200,await league.library({season,fighter}));
     }
     let m;
+    if((m=/^\/api\/league\/matches\/([\w-]{1,40})\/(prediction|danmaku)$/.exec(path))){
+      const [,id,kind]=m;
+      if(req.method==='GET'&&kind==='danmaku'){
+        if(req.headers['sec-fetch-site']==='cross-site')return json(res,403,{error:'仅接受本站的请求。'});
+        return danmaku.stream(id,res);
+      }
+      if(req.method==='POST'){
+        if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 请求。'});
+        const input=await matchInput(req);
+        if(!validSpectator(input?.spectator))return json(res,400,{error:'观众标识无效。'});
+        if(kind==='prediction'&&input.side!==0&&input.side!==1)return json(res,400,{error:'请选择一位选手。'});
+        const {status,data}=kind==='prediction'?await league.predict(id,input.spectator,input.side):
+          await danmaku.send(id,input.spectator,req.socket.remoteAddress,input.text);
+        return json(res,status,data);
+      }
+    }
     if(req.method==='GET'&&(m=/^\/api\/league\/matches\/([\w-]{1,40})$/.exec(path))){const found=await league.match(m[1]);return json(res,found?200:404,found||{error:'找不到联赛比赛。'});}
     if(req.method==='GET'&&(m=/^\/api\/league\/fighters\/([\w-]{1,40})$/.exec(path))){const found=await league.fighter(m[1]);return json(res,found?200:404,found||{error:'找不到选手。'});}
     if(req.method==='POST'&&path==='/api/league/reset'){
