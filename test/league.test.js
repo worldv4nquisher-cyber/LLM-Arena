@@ -208,7 +208,7 @@ test('live danmaku reaches both viewers, sanitizes content and rate-limits sende
     const response=await fetch(route(live.id),{signal:abort.signal});
     assert.match(response.headers.get('content-type'),/^text\/event-stream/);
     const reader=response.body.pipeThrough(new TextDecoderStream()).getReader();
-    assert.equal((await reader.read()).value,'retry: 3000\n\n');return reader;
+    assert.equal((await reader.read()).value,'retry: 3000\nevent: ready\ndata: connected\n\n');return reader;
   }));
   assert.deepEqual(await (await post(live.id,'  <漂亮>\n翻盘！  ')).json(),{text:'漂亮 翻盘！'});
   for(const reader of readers)assert.equal((await reader.read()).value,'data: {"text":"漂亮 翻盘！"}\n\n');
@@ -220,7 +220,7 @@ test('live danmaku reaches both viewers, sanitizes content and rate-limits sende
   await Promise.all(readers.map(reader=>reader.cancel()));
 });
 
-test('one caller cannot exhaust the shared danmaku stream pool', async t => {
+test('a caller at the danmaku stream cap can retry once a slot opens', async t => {
   const app=createArena({env:{},ladder:createLadder({path:null}),league:{path:null,autostart:false,firstDelay:0}});
   app.listen(0,'127.0.0.1');
   await once(app,'listening');
@@ -229,8 +229,17 @@ test('one caller cannot exhaust the shared danmaku stream pool', async t => {
   await app.league.tick();await app.league.computing;await app.league.tick();
   const {live}=await app.league.snapshot();
   const url=`http://127.0.0.1:${app.address().port}/api/league/matches/${live.id}/danmaku`;
+  const closes=[];
+  app.on('request',(_req,res)=>closes.push(once(res,'close')));
   const streams=await Promise.all(Array.from({length:8},()=>fetch(url,{signal:abort.signal})));
   assert.ok(streams.every(response=>response.status===200));
-  assert.equal((await fetch(url,{headers:{'X-Forwarded-For':'192.0.2.1'}})).status,429);
+  const overflow=await fetch(url,{headers:{'X-Forwarded-For':'192.0.2.1'},signal:AbortSignal.timeout(5000)});
+  assert.match(overflow.headers.get('content-type'),/^text\/event-stream/);
+  assert.equal(await overflow.text(),'retry: 5000\nevent: capacity\ndata: full\n\n');
   await Promise.all(streams.map(response=>response.body.cancel()));
+  await Promise.all(closes);
+  const rejoined=await fetch(url,{signal:abort.signal});
+  const reader=rejoined.body.pipeThrough(new TextDecoderStream()).getReader();
+  assert.equal((await reader.read()).value,'retry: 3000\nevent: ready\ndata: connected\n\n');
+  await reader.cancel();
 });

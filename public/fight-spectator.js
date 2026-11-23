@@ -37,8 +37,16 @@ export function mountDanmaku({overlay,toggle,form,input,status}) {
     status.textContent='正在连接直播…';
     const stream=new EventSource(`/api/league/matches/${id}/danmaku`);
     source=stream;
-    stream.onopen=()=>{if(source===stream){connected=true;status.textContent='';sync();}};
-    stream.onerror=()=>{if(source===stream){connected=false;status.textContent=stream.readyState===EventSource.CLOSED?'直播弹幕已关闭。':'弹幕连接中断，正在重连…';sync();}};
+    let waitingForSlot=false;
+    stream.addEventListener('ready',()=>{if(source===stream){waitingForSlot=false;connected=true;status.textContent='';sync();}});
+    stream.addEventListener('capacity',()=>{if(source===stream){waitingForSlot=true;status.textContent='直播弹幕连接已满，正在重试…';}});
+    stream.onerror=()=>{
+      if(source!==stream)return;
+      connected=false;
+      if(stream.readyState===EventSource.CLOSED)status.textContent='直播弹幕已关闭。';
+      else if(!waitingForSlot)status.textContent='弹幕连接中断，正在重连…';
+      sync();
+    };
     stream.onmessage=e=>{if(source===stream)display(JSON.parse(e.data).text);};
   }
   form.addEventListener('submit',async event=>{

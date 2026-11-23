@@ -6,10 +6,10 @@ export function createDanmaku(league,now=Date.now) {
   const viewers=new Set(),senders=new Map(),addresses=new Map();
   async function stream(id,address,res) {
     if(!await league.isLive(id)){res.writeHead(204);res.end();return;}
-    if([...viewers].filter(viewer=>viewer.address===address).length>=maxViewersPerAddress){res.writeHead(429);res.end();return;}
-    if(viewers.size>=maxViewers){res.writeHead(503);res.end();return;}
+    const full=viewers.size>=maxViewers||[...viewers].filter(viewer=>viewer.address===address).length>=maxViewersPerAddress;
     res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','X-Accel-Buffering':'no'});
-    res.write('retry: 3000\n\n');
+    if(full){res.end('retry: 5000\nevent: capacity\ndata: full\n\n');return;}
+    res.write('retry: 3000\nevent: ready\ndata: connected\n\n');
     const viewer={id,address,res};
     viewers.add(viewer);
     const heartbeat=setInterval(async()=>{
