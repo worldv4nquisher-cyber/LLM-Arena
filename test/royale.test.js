@@ -107,3 +107,21 @@ test('royale route updates separate league and controller ladder standings', asy
   }
   assert.match(await (await fetch(base+'/royale')).text(),/机器人混战/);
 });
+
+test('a public royale request cannot trigger paid model calls', async t => {
+  let requests = 0;
+  const server = createArena({
+    env: { OPENAI_API_KEY: 'test-key', OPENAI_MODEL: 'test-model', LEAGUE_ADMIN_TOKEN: 'test-token' },
+    ladder: createLadder({ path: null }),
+    request: async () => { requests++; return new Response('',{status:401}); },
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const reply = await fetch('http://127.0.0.1:'+server.address().port+'/api/royale',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ controllers:['openai:test-model',...players.slice(1).map(p=>'builtin:'+p)] }),
+  });
+  assert.equal(reply.status,403);
+  assert.equal(requests,0);
+});

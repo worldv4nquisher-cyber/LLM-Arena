@@ -113,6 +113,8 @@ POST只接受本站JSON请求。真实模型对局最多同时1场，与经典�
 | GET | `/api/royale/:id` | 计算进度及完整回放 |
 | GET | `/api/ladder/royale` | 混战控制器累计战绩 |
 
+使用真实控制器发起混战需要 `Authorization: Bearer $LEAGUE_ADMIN_TOKEN`；内置混战不需要令牌。
+
 ## 真实模型配置与限制
 
 复制`.env.example`为`.env`并填写密钥/模型ID，然后：

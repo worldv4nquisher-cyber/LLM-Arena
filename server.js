@@ -85,6 +85,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
   const validJSON = req => req.headers['sec-fetch-site'] !== 'cross-site' &&
     req.headers['content-type']?.split(';')[0].trim() === 'application/json' &&
     (!req.headers.origin || req.headers.origin === `http://${req.headers.host}` || req.headers.origin === `https://${req.headers.host}`);
+  const leagueAdmin = req => env.LEAGUE_ADMIN_TOKEN && req.headers.authorization === `Bearer ${env.LEAGUE_ADMIN_TOKEN}`;
   function reserveJob(event) {
     while(jobs.size>=20) {
       const finished=[...jobs].find(([,job])=>job.status!=='running');
@@ -145,8 +146,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     if(req.method==='GET'&&(m=/^\/api\/league\/fighters\/([\w-]{1,40})$/.exec(path))){const found=await league.fighter(m[1]);return json(res,found?200:404,found||{error:'找不到选手。'});}
     if(req.method==='POST'&&path==='/api/league/reset'){
       if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 请求。'});
-      const token=env.LEAGUE_ADMIN_TOKEN;
-      if(!token||req.headers.authorization!==`Bearer ${token}`)return json(res,403,{error:'需要联赛管理员令牌。'});
+      if(!leagueAdmin(req))return json(res,403,{error:'需要联赛管理员令牌。'});
       await league.reset();return json(res,200,{ok:true});
     }
     return json(res,404,{error:'未找到。'});
@@ -192,6 +192,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
         return json(res,400,{error:'混战需要五位不同的有效控制器和有效种子。'});
       }
       const isLive=ids.some(id=>models[id]?.mode==='live');
+      if(isLive&&!leagueAdmin(req))return json(res,403,{error:'真实模型混战需要联赛管理员令牌。'});
       if(isLive&&liveInProgress)return json(res,429,{error:'已有真实模型对局进行中，请稍后再试。'});
       const reserved=reserveJob('royale');
       if(!reserved)return json(res,429,{error:'比赛任务已满，请稍后重试。'});
