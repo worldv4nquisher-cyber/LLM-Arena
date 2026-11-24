@@ -110,6 +110,12 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     for(const m of state.seasons.flatMap(s=>s.matches))if(m.status==='computing')m.status='scheduled';
   })();
   let writing=Promise.resolve();
+  let royaleWrites=Promise.resolve();
+  function withRoyaleScores(write) {
+    const result=royaleWrites.then(write);
+    royaleWrites=result.catch(()=>{});
+    return result;
+  }
   function persist() {
     if(root===null)return writing;
     const snapshot=JSON.stringify(state);
@@ -211,9 +217,12 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     tick,
     get computing(){return computing;},
     async recordRoyale(ranking) {
-      await ready;
-      addRoyaleResult(state.royale??={},ranking);
-      await persist();
+      await withRoyaleScores(async()=>{
+        await ready;
+        await ladder?.recordRoyale(ranking);
+        addRoyaleResult(state.royale??={},ranking);
+        await persist();
+      });
     },
     async snapshot(spectator) {
       await ready;const at=now(),season=state.seasons.at(-1);
@@ -264,13 +273,15 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
         matches:done.map(m=>publicMatch(m,now())).reverse().slice(0,30)};
     },
     async reset() {
-      await ready;await ticking;await computing;
-      state=fresh();replays.clear();
-      if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true}).catch(()=>{});
-      await ladder?.reset?.();await persist();await tick();
+      await withRoyaleScores(async()=>{
+        await ready;await ticking;await computing;
+        state=fresh();replays.clear();
+        if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true}).catch(()=>{});
+        await ladder?.reset?.();await persist();await tick();
+      });
     },
     start(){if(!timer&&!closed){timer=setInterval(tick,interval);timer.unref?.();tick();}},
-    async close(){closed=true;clearInterval(timer);timer=null;await ticking;await computing;await writing;},
+    async close(){closed=true;clearInterval(timer);timer=null;await ticking;await computing;await royaleWrites;await writing;},
   };
   if(autostart)api.start();
   return api;

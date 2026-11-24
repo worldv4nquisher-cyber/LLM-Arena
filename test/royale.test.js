@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { runRoyale } from '../royale-match.js';
 import { createBuiltinController, liveController, personalities } from '../fight-controllers.js';
 import { createLadder } from '../fight-ladder.js';
+import { createLeague } from '../fight-league.js';
 import { createArena } from '../server.js';
 
 const seed = 71;
@@ -124,4 +125,24 @@ test('a public royale request cannot trigger paid model calls', async t => {
   });
   assert.equal(reply.status,403);
   assert.equal(requests,0);
+});
+
+test('a royale finishing during league reset scores on both new boards', async () => {
+  const ladder = createLadder({path:null}), resetLadder = ladder.reset;
+  const entered = Promise.withResolvers(), resume = Promise.withResolvers();
+  ladder.reset = async () => {
+    entered.resolve();
+    await resume.promise;
+    await resetLadder();
+  };
+  const league = createLeague({ roster:players.map(id=>({id,controller:'builtin:'+id})), path:null, autostart:false, ladder });
+  const {ranking} = await runRoyale({players,controllers:bots(),seed});
+  const resetting = league.reset();
+  await entered.promise;
+  const scoring = league.recordRoyale(ranking);
+  resume.resolve();
+  await Promise.all([resetting,scoring]);
+  assert.equal((await ladder.royaleSnapshot()).length,5);
+  assert.equal((await league.snapshot()).royale.length,5);
+  await league.close();
 });
