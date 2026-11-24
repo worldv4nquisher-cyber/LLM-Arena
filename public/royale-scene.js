@@ -275,6 +275,7 @@ export class RoyaleScene {
     }
     this.radius += (state.zone.radius - this.radius) * 0.12;
     this.zone.scale.set(this.radius, 1, this.radius);
+    this.zone.visible = !state.zone.overtime;
     this.wall.material.opacity = 0.12 + 0.045 * Math.sin(time * 4);
     if (Math.abs(this.hazard.userData.radius - this.radius) > 0.026 || !this.hazard.userData.radius) {
       this.hazard.geometry.dispose();

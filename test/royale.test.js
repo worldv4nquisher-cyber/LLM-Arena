@@ -76,6 +76,21 @@ test('configured model uses the same decision contract without duel-only rules',
   assert.equal(replay.ranking.find(r=>r.id===players[0]).controller,'openai:test');
 });
 
+test('the final storm removes the safe radius and damages fighters at the center', async () => {
+  const radius = p=>Math.hypot(p.x,p.z);
+  const controllers = players.map(id=>({id,decide(view){
+    const closest=view.legalMoves.filter(m=>m.type==='move').sort((a,b)=>radius(a.to)-radius(b.to))[0];
+    const move=closest && radius(closest.to)<radius(view.you) ? closest.id : 'defend';
+    return {move,reason:'向安全区中心推进'};
+  }}));
+  const replay = await runRoyale({players,controllers,seed});
+  const first = replay.beats.find(b=>b.zone.overtime);
+  assert.ok(first?.events.some(e=>e.type==='overtime'));
+  assert.equal(first.zone.radius,0);
+  assert.equal(first.round,15);
+  assert.ok(replay.beats.some(b=>b.zone.overtime&&radius(b.entrants.find(p=>p.id===b.actor))<1.4&&b.events.some(e=>e.type==='storm')));
+});
+
 test('royale route updates separate league and controller ladder standings', async t => {
   const ladder = createLadder({ path: null });
   const server = createArena({ env: {}, ladder, league: { path: null, autostart: false } });

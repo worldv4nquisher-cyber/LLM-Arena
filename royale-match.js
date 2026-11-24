@@ -125,6 +125,13 @@ export async function runRoyale({ players, controllers, seed, onProgress, deadli
       if (phase < 4) spawn(zone.radius, round);
       effects.push({ type: 'zone', phase });
     }
+    if (round >= 15) {
+      zone = { ...zone, radius: 0, overtime: true, damage: 20 + (round - 15) * 6 };
+      if (round === 15) {
+        items.length = 0;
+        effects.push({ type: 'overtime' });
+      }
+    }
     const first = (round - 1) % order.length;
     for (const actor of [...order.slice(first), ...order.slice(0, first)]) {
       if (!actor.hp) continue;
@@ -182,8 +189,8 @@ export async function runRoyale({ players, controllers, seed, onProgress, deadli
         events.push({ type: 'hit', target: target.id, damage, absorbed });
         if (!target.hp) eliminate(target, actor, events);
       }
-      if (alive().length > 1 && (dist(actor) > zone.radius || round >= 15)) {
-        const damage = Math.min(actor.hp, round >= 15 ? 20 + (round - 15) * 6 : zone.damage);
+      if (alive().length > 1 && (zone.overtime || dist(actor) > zone.radius)) {
+        const damage = Math.min(actor.hp, zone.damage);
         actor.hp -= damage;
         events.push({ type: 'storm', target: actor.id, damage });
         if (!actor.hp) eliminate(actor, null, events);

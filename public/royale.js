@@ -56,8 +56,8 @@ function renderHUD(state, actor, ranking) {
   const entries = ranking ? [...state.entrants].sort((a,b)=>a.place-b.place) : state.entrants;
   const alive = state.entrants.filter(p=>p.hp>0).length;
   $('royale-alive').textContent = String(alive).padStart(2,'0') + ' / 05';
-  $('zone-phase').textContent = '安全区 ' + String(state.zone.phase+1).padStart(2,'0');
-  $('zone-next').textContent = ranking ? '落幕' : state.round >= 15 ? '全场风暴' : state.zone.nextRound ? '第 ' + state.zone.nextRound + ' 轮缩圈' : '最终安全区';
+  $('zone-phase').textContent = state.zone.overtime ? '全岛风暴' : '安全区 ' + String(state.zone.phase+1).padStart(2,'0');
+  $('zone-next').textContent = ranking ? '落幕' : state.zone.overtime ? '无安全区' : state.zone.nextRound ? '第 ' + state.zone.nextRound + ' 轮缩圈' : '最终安全区';
   $('radar-zone').setAttribute('r',state.zone.radius*4.6);
   $('radar-loot').replaceChildren(...state.loot.map(i=>svgDot('rect',i,2.05,lootColors[i.kind],'#162039')));
   $('radar-players').replaceChildren(...state.entrants.filter(p=>p.hp).map(p=>svgDot('circle',p,p.id===actor?4.0:3.2,byId[p.id].color,p.id===actor?'#fff':'#171931')));
@@ -77,6 +77,7 @@ const detail = (e, b) => {
   const actor = name(b.actor);
   switch(e.type) {
     case 'zone': return '安全区缩至第 ' + (e.phase + 1) + ' 阶段，圈外将持续扣血。';
+    case 'overtime': return '风暴覆盖全岛，所有选手都将持续扣血。';
     case 'callout': return actor + ' 公开提议：集火 ' + name(e.target) + '！';
     case 'cooperate': return actor + ' 响应 ' + name(e.partner) + ' 的集火提议。';
     case 'betrayal': return actor + ' 转火 ' + name(e.target) + '，临时合作破裂。';
@@ -92,7 +93,7 @@ function highlight(beat) {
   const headline = beat.events.filter(e=>['hit','pickup','storm','elimination'].includes(e.type)).map(e=>detail(e,beat));
   if (move.type === 'move') headline.unshift(name(beat.actor) + ' 向' + move.direction + '移动。');
   if (move.type === 'defend') headline.unshift(name(beat.actor) + ' 进入防御姿态。');
-  const important = beat.events.filter(e=>['zone','elimination','callout','cooperate','betrayal','pickup'].includes(e.type));
+  const important = beat.events.filter(e=>['zone','overtime','elimination','callout','cooperate','betrayal','pickup'].includes(e.type));
   $('royale-commentary').textContent = headline.join(' ');
   $('royale-turn').textContent = '第 ' + beat.round + ' 轮 / 回合 ' + String(beat.turn).padStart(2,'0') + ' · ' + name(beat.actor);
   $('royale-reason').hidden = false;
