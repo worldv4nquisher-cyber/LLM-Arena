@@ -7,7 +7,7 @@ function rates(s) {
 }
 const conditionNames={always:'无条件',opponent_guarded:'对手格挡',hit:'上招命中',missed:'上招落空',was_hit:'自身受击',near:'近距',mid:'中距',far:'远距'};
 const moveNames=Object.fromEntries([...baseMoves,...movePool,...ultimates,{id:'custom',name:'自创招'}].map(m=>[m.id,m.name]));
-async function invoke(controller, method, view, deadlines, parentSignal) {
+export async function invoke(controller, method, view, deadlines, parentSignal) {
   const abort=new AbortController(),signal=AbortSignal.any([abort.signal,parentSignal]);
   let timer,onAbort,pending;
   try {

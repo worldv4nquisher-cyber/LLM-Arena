@@ -3,7 +3,7 @@ import { baseMoves, movePool, ultimates, eventTarget, mistakeLabel, cellPosition
 import { buildBroadcast, broadcastAt, buildHighlights, describeExchange, isKeyHit, roundCall, entranceStatus, edgeWarning } from './fight-broadcast.js';
 import { CONTACT, playbackCues, advancePlayback } from './fight-choreography.js';
 import { ArenaAudio } from './fight-audio.js';
-import { mountLeague } from './league-ui.js';
+import { mountLeague, royaleTable } from './league-ui.js';
 import { mountDanmaku, mountVoice } from './fight-spectator.js';
 
 const $ = id => document.getElementById(id), audio = new ArenaAudio();
@@ -263,6 +263,8 @@ try{
   $('scene').addEventListener('rendererror',()=>{playing=false;$('start').disabled=true;$('pause').disabled=true;announce('3D 画面已中断','请刷新页面重新连接渲染器。');});
 }catch(error){$('loading-scene').textContent='无法初始化比赛，请检查连接与 WebGL 支持。';announce('暂时无法载入',error.message);console.error('Arena initialization failed:',error);}
 refreshLadder();
+json('/api/ladder/royale').then(rows=>$('ladder-royale').replaceChildren(royaleTable(rows,controllerLabel,'控制器')))
+  .catch(()=>{$('ladder-royale').textContent='混战天梯暂时不可用。';});
 league=mountLeague({onWatch:watchLeague,onUpdate:({live,season})=>{
   if(leagueMatch?.status!=='live'||leagueMatch.id===live?.id)return;
   const match=season?.matches.find(m=>m.id===leagueMatch.id);

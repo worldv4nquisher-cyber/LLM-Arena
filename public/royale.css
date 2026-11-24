@@ -1,0 +1,107 @@
+.royale-page { --mint: #91f3d0; --console: #1a1b29; --secondary: #aaa7bd; --storm: #f3a1d9; }
+.royale-shell { max-width: 1440px; margin: auto; padding: 29px 4% 0; }
+.royale-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 22px; }
+.royale-kicker, .royale-serial, .royale-desk-title small, .royale-tape small, .royale-footer, .royale-legend small {
+  font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .16em; color: var(--secondary);
+}
+.royale-kicker { margin: 0 0 6px; }
+.royale-kicker span, .royale-serial b span { color: var(--mint); }
+.royale-heading h1 { margin: 0; font-size: clamp(38px, 5vw, 67px); line-height: 1.03; letter-spacing: -.045em; }
+.royale-subtitle { margin: 10px 0 0; color: var(--secondary); font-size: 13px; }
+.royale-serial { text-align: right; white-space: nowrap; border-right: 2px solid var(--mint); padding-right: 12px; }
+.royale-serial b { display: block; color: #e8e8f0; font-size: 26px; letter-spacing: -.04em; }
+.royale-grid { display: grid; grid-template-columns: minmax(0,1fr) 282px; gap: 13px; }
+.royale-broadcast, .royale-desk, .royale-tape { min-width: 0; border: 1px solid #b9b3fa28; background: var(--console); border-radius: 13px; overflow: hidden; }
+.royale-broadcast { display: flex; flex-direction: column; }
+.royale-stage { position: relative; flex: 1; min-height: 410px; aspect-ratio: 1.9; overflow: hidden; background: #221b43; isolation: isolate; }
+.royale-world, .royale-tags { position: absolute; inset: 0; }
+.royale-world canvas { display: block; width: 100%; height: 100%; }
+.royale-tags { pointer-events: none; }
+.royale-tag { position: absolute; left: 0; top: 0; background: #101321ec; color: white; white-space: nowrap; border: 1px solid var(--entrant); border-radius: 4px; padding: 2px 5px; font: 700 10px ui-monospace, monospace; }
+.royale-tag.active { color: #101321; background: var(--entrant); z-index: 2; }
+.royale-overlay, .royale-venue, .royale-cameras { position: absolute; z-index: 3; }
+.royale-overlay { inset: 12px 12px auto; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
+.royale-overlay > div, .royale-venue, .royale-cameras { padding: 7px 9px; border: 1px solid #dfdef033; border-radius: 6px; background: #101321e8; }
+.royale-overlay > div { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.royale-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 12px var(--mint); }
+.royale-zone b { color: var(--mint); }
+.royale-zone span { color: #cecbe0; }
+.royale-venue { left: 12px; bottom: 12px; display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.royale-venue > span { color: var(--mint); font-size: 18px; }
+.royale-venue b, .royale-venue small { display: block; }
+.royale-venue small { font: 9px ui-monospace, monospace; letter-spacing: .1em; color: var(--secondary); }
+.royale-cameras { right: 12px; bottom: 12px; padding: 3px; }
+.royale-cameras button, .royale-playback button { background: transparent; border-radius: 4px; padding: 6px 8px; color: var(--secondary); font-size: 11px; }
+.royale-cameras button[aria-pressed="true"], .royale-playback button:not(:disabled) { color: var(--mint); background: #91f3d01b; }
+.royale-winner { position: absolute; z-index: 4; left: 50%; top: 24%; transform: translateX(-50%); width: max-content; max-width: 90%; padding: 15px 25px; text-align: center; background: #131326f2; border: 1px solid #91f3d0a3; box-shadow: 0 10px 30px #0b0c22aa; border-radius: 9px; }
+.royale-winner small, .royale-winner span { display: block; color: var(--mint); letter-spacing: .12em; font-size: 11px; }
+.royale-winner strong { display: block; font-size: clamp(26px, 5vw, 54px); letter-spacing: -.02em; line-height: 1.1; padding: 5px 0; }
+.royale-fallback { position: absolute; inset: 40% 15px auto; text-align: center; padding: 15px; background: var(--console); border-radius: 8px; }
+.royale-commentary { display: flex; gap: 12px; align-items: flex-start; min-height: 91px; padding: 12px 14px; border-top: 1px solid var(--line); }
+.royale-commentary-icon { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border: 1px solid #91f3d04f; border-radius: 8px; color: var(--mint); font-size: 20px; }
+.royale-commentary small { font: 10px ui-monospace, monospace; letter-spacing: .12em; color: var(--mint); }
+.royale-commentary p { margin: 2px 0 0; font-size: 13px; }
+.royale-commentary .royale-reason { color: var(--secondary); font-size: 12px; }
+.royale-playback { display: flex; gap: 9px; align-items: center; padding: 7px 12px; border-top: 1px solid var(--line); }
+.royale-playback span { font: 11px ui-monospace, monospace; color: var(--secondary); }
+.royale-playback progress { flex: 1; width: 0; height: 5px; accent-color: var(--mint); }
+.royale-desk { display: flex; flex-direction: column; padding: 13px; }
+.royale-desk-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.royale-desk-title h2, .royale-tape h2 { font-size: 18px; margin: 1px 0 0; }
+.royale-desk-title b { padding: 5px 8px; background: #91f3d015; color: var(--mint); font: 700 12px ui-monospace, monospace; border-radius: 5px; }
+.royale-roster { display: grid; gap: 5px; }
+.royale-entrant { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 6px 7px; border-radius: 6px; border: 1px solid #e4e2fc17; background: #242437; }
+.royale-entrant[data-active="true"] { border-color: var(--entrant); }
+.royale-entrant[data-out="true"] { background: #1d1d2b; opacity: .66; }
+.entrant-icon { display: grid; place-items: center; width: 26px; height: 28px; border-radius: 5px; background: #111422; color: var(--entrant); font-size: 15px; }
+.entrant-info > div { display: flex; align-items: baseline; gap: 5px; }
+.entrant-info small { color: #c2bdd0; font-size: 9px; }
+.entrant-info strong { font-size: 12px; }
+.entrant-info progress { display: block; width: 100%; height: 4px; margin-top: 4px; appearance: none; border: 0; background: #10101b; border-radius: 5px; }
+.entrant-info progress::-webkit-progress-bar { background: #10101b; border-radius: 5px; }
+.entrant-info progress::-webkit-progress-value { background: var(--entrant); border-radius: 5px; }
+.entrant-info progress::-moz-progress-bar { background: var(--entrant); border-radius: 5px; }
+.entrant-hp { font: 700 11px ui-monospace, monospace; color: var(--entrant); text-align: right; min-width: 25px; }
+.entrant-hp small { display: block; font-size: 9px; color: var(--secondary); margin-top: 2px; }
+.royale-radar-row { display: flex; align-items: center; justify-content: center; flex: 1; gap: 14px; min-height: 122px; padding: 9px 0; }
+.royale-radar-row svg { width: 104px; height: 104px; overflow: visible; }
+.radar-base { fill: #111525; stroke: #817eaa; stroke-width: .8; }
+.radar-grid { fill: none; stroke: #363955; stroke-width: 1; }
+.radar-zone { fill: #91f3d024; stroke: var(--mint); stroke-width: .8; }
+.royale-legend { display: grid; gap: 4px; font-size: 11px; color: #dedbec; }
+.royale-legend i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 1px; vertical-align: 1px; }
+.zone-key { background: var(--mint); }.weapon-key { background: #ffc375; }.shield-key { background: #7ed6ff; }.supply-key { background: #a8f083; }
+.royale-launch button { width: 100%; display: flex; justify-content: space-between; gap: 8px; background: var(--mint); color: #10201c; padding: 10px 12px; border-radius: 6px; font-weight: 800; }
+.royale-launch p { text-align: center; margin: 6px 0 0; color: var(--secondary); font-size: 10px; }
+.royale-tape { margin-top: 13px; padding: 13px; }
+.royale-tape header { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-bottom: 9px; }
+.royale-tape header span, .royale-tape a { font-size: 11px; color: var(--secondary); }
+.royale-tape a:hover { color: var(--mint); }
+.royale-tape ol { padding: 0; margin: 0; list-style: none; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.royale-tape li { min-width: 0; color: #eeedf4; border: 1px solid #b9b3fa29; border-radius: 5px; padding: 7px; font-size: 11px; }
+.royale-tape li[data-type="zone"], .royale-tape li[data-type="elimination"] { border-color: #f3a1d959; }
+.royale-tape li b { color: var(--mint); font: 10px ui-monospace, monospace; padding-right: 6px; }
+.royale-tape li.royale-empty { grid-column: 1/-1; color: var(--secondary); }
+.royale-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+.royale-footer { display: flex; flex-wrap: wrap; gap: 6px 20px; justify-content: space-between; padding: 14px 0; }
+@media (max-width: 900px) {
+  .royale-grid { grid-template-columns: minmax(0,1fr) 235px; }
+  .entrant-info small { display: none; }
+  .royale-stage { min-height: 360px; }
+}
+@media (max-width: 680px) {
+  .royale-shell { padding-top: 19px; }
+  .royale-grid { grid-template-columns: 1fr; }
+  .royale-stage { min-height: 285px; aspect-ratio: 1.42; }
+  .royale-desk { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+  .royale-desk-title, .royale-launch { grid-column: span 2; margin: 0; }
+  .royale-radar-row { gap: 4px; flex-direction: column; }
+  .royale-radar-row svg { width: 83px; height: 83px; }
+  .royale-tape ol { grid-template-columns: 1fr 1fr; }
+  .royale-tables { display: block; }
+}
+@media (max-width: 390px) {
+  .royale-serial > span { display: none; }
+  .royale-heading h1 { font-size: 34px; }
+  .royale-tape ol { grid-template-columns: 1fr; }
+}

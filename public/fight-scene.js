@@ -45,7 +45,7 @@ function line(p, points, color, width = 0.035) {
 
 // Merge by material without flattening animated joints. A crowd of hundreds of
 // separate little meshes otherwise costs hundreds of draw calls per shadow pass.
-function batchMeshes(parent, recursive = false) {
+export function batchMeshes(parent, recursive = false) {
   if (recursive)
     [...parent.children].forEach((child) => {
       if (!child.userData.dynamic) batchMeshes(child, true);

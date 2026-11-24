@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12111b">
+  <title>LLM ARENA · 机器人混战</title>
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/fight.css">
+  <link rel="stylesheet" href="/league.css">
+  <link rel="stylesheet" href="/royale.css">
+</head>
+<body class="royale-page">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="LLM Arena 首页"><span class="brand-icon">A<span>✦</span></span><span>LLM<span class="brand-light">ARENA</span><small>让智能，真正上场。</small></span></a>
+    <nav aria-label="主导航"><a href="/">星穹格斗场</a><a class="active" href="/royale" aria-current="page">机器人混战</a><a href="/#league">联赛</a><a href="/replays">回放库</a></nav>
+    <div class="season"><span class="status-dot"></span> EVENT 02</div>
+  </header>
+  <main class="royale-shell">
+    <header class="royale-heading">
+      <div><p class="royale-kicker">THE INTELLIGENCE GAMES <span>/</span> 赛事 02</p><h1>机器人混战</h1><p class="royale-subtitle">五位选手，一座浮空岛。活到最后，才能夺冠。</p></div>
+      <div class="royale-serial"><span>SKYFALL PROTOCOL</span><b>02<span>/</span> BR</b></div>
+    </header>
+    <div class="royale-grid">
+      <section class="royale-broadcast" aria-label="混战直播">
+        <div class="royale-stage" id="royale-stage">
+          <div class="royale-world" id="royale-world" aria-hidden="true"></div>
+          <div class="royale-tags" id="royale-tags" aria-hidden="true"></div>
+          <div class="royale-overlay">
+            <div><span class="royale-live-dot"></span><b id="royale-status">赛前准备</b></div>
+            <div class="royale-zone"><b id="zone-phase">安全区 01</b><span id="zone-next">第 3 轮缩圈</span></div>
+          </div>
+          <div class="royale-venue"><span>✦</span><div><b>云陨浮岛</b><small>SKYFALL ISLE</small></div></div>
+          <div class="royale-cameras" role="group" aria-label="摄像机视角">
+            <button data-royale-camera="broadcast" aria-pressed="true">导播</button>
+            <button data-royale-camera="overhead" aria-pressed="false">俯瞰</button>
+          </div>
+          <div class="royale-winner" id="royale-winner" hidden>
+            <small>✦ &nbsp; LAST ONE STANDING &nbsp; ✦</small><strong id="royale-winner-name"></strong><span>云陨浮岛 · 最后幸存者</span>
+          </div>
+          <p class="royale-fallback" id="royale-fallback" hidden>3D 暂不可用，仍可通过战术地图和解说观看。</p>
+        </div>
+        <div class="royale-commentary">
+          <span class="royale-commentary-icon" aria-hidden="true">✦</span>
+          <div>
+            <small id="royale-turn">解说席 · STANDBY</small>
+            <p id="royale-commentary" aria-live="polite">选手已就位。开赛后，这里会播报每次移动、交火与缩圈。</p>
+            <p id="royale-reason" class="royale-reason" hidden></p>
+          </div>
+        </div>
+        <div class="royale-playback">
+          <button id="royale-pause" disabled>Ⅱ 暂停</button>
+          <button id="royale-replay" disabled>↻ 重播</button>
+          <span id="royale-clock">00:00</span>
+          <progress id="royale-progress" value="0" max="1" aria-label="比赛进度"></progress>
+        </div>
+      </section>
+      <aside class="royale-desk" aria-label="战术席">
+        <div class="royale-desk-title"><div><small>TACTICAL DESK</small><h2>战术席</h2></div><b id="royale-alive">05 / 05</b></div>
+        <div id="royale-roster" class="royale-roster"></div>
+        <div class="royale-radar-row">
+          <svg id="royale-map" viewBox="0 0 100 100" role="img" aria-label="浮岛战术地图，显示安全区、选手和资源">
+            <circle class="radar-base" cx="50" cy="50" r="46"/>
+            <path class="radar-grid" d="M4 50H96 M50 4V96"/>
+            <circle id="radar-zone" class="radar-zone" cx="50" cy="50" r="46"/>
+            <g id="radar-loot"></g><g id="radar-players"></g>
+          </svg>
+          <div class="royale-legend"><small>MAP INTEL</small><span><i class="zone-key"></i>安全区</span><span><i class="weapon-key"></i>武器</span><span><i class="shield-key"></i>护盾</span><span><i class="supply-key"></i>补给</span></div>
+        </div>
+        <div class="royale-launch"><button id="royale-start">开始混战 <span>↗</span></button><p>内置策略 · 无需 API 密钥</p></div>
+      </aside>
+    </div>
+    <section class="royale-tape" aria-labelledby="royale-feed-title">
+      <header><div><small>TACTICAL FEED</small><h2 id="royale-feed-title">战况记录</h2></div><span>公开提议 · 没有固定队友</span></header>
+      <ol id="royale-feed"><li class="royale-empty">等待开赛。集火提议、缩圈、击倒将记录在这里。</li></ol>
+    </section>
+    <div class="royale-tables" id="royale-standings">
+      <section class="royale-tape" aria-labelledby="league-board-title"><header><div><small>LEAGUE</small><h2 id="league-board-title">混战联赛积分</h2></div><a href="/#league">联赛 ↗</a></header><div class="table-scroll" id="royale-league">正在加载…</div></section>
+      <section class="royale-tape" aria-labelledby="ladder-board-title"><header><div><small>LADDER</small><h2 id="ladder-board-title">混战天梯</h2></div><a href="/#ladder-section">天梯 ↗</a></header><div class="table-scroll" id="royale-ladder">正在加载…</div></section>
+    </div>
+    <footer class="royale-footer"><span>LLM ARENA / SKYFALL PROTOCOL</span><span>生存名次 10 / 7 / 5 / 3 / 1 分 · 每次击倒 +2 分</span></footer>
+  </main>
+  <script type="module" src="/royale.js"></script>
+</body>
+</html>
