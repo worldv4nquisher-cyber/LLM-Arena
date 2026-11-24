@@ -142,7 +142,7 @@ test('a public royale request cannot trigger paid model calls', async t => {
   assert.equal(requests,0);
 });
 
-test('a royale finishing during league reset scores on both new boards', async () => {
+test('a royale finishing during league reset is available without waiting and both boards clear together', async () => {
   const ladder = createLadder({path:null}), resetLadder = ladder.reset;
   const entered = Promise.withResolvers(), resume = Promise.withResolvers();
   ladder.reset = async () => {
@@ -154,10 +154,12 @@ test('a royale finishing during league reset scores on both new boards', async (
   const {ranking} = await runRoyale({players,controllers:bots(),seed});
   const resetting = league.reset();
   await entered.promise;
-  const scoring = league.recordRoyale(ranking);
-  resume.resolve();
-  await Promise.all([resetting,scoring]);
+  await ladder.recordRoyale(ranking);
   assert.equal((await ladder.royaleSnapshot()).length,5);
   assert.equal((await league.snapshot()).royale.length,5);
+  resume.resolve();
+  await resetting;
+  assert.deepEqual(await ladder.royaleSnapshot(),[]);
+  assert.deepEqual((await league.snapshot()).royale,[]);
   await league.close();
 });

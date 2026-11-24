@@ -201,7 +201,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
       setImmediate(async()=>{
         try {
           const replay=await runRoyale({players:defaultRoyalePlayers,controllers:ids.map(c=>brain(c,seed)),seed,deadlines,onProgress:p=>{job.progress=p;}});
-          await (league ? league.recordRoyale(replay.ranking) : ladder.recordRoyale(replay.ranking));
+          await ladder.recordRoyale(replay.ranking);
           job.replay=replay;job.status='done';
         }catch(error){job.status='error';job.error=error instanceof ModelError?error.message:'混战计算失败。';}
         finally{if(isLive)liveInProgress=false;}

@@ -6,7 +6,6 @@ import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {buildBroadcast} from './public/fight-broadcast.js';
 import {eventTarget} from './public/strategy-rules.js';
-import {addRoyaleResult,royaleStandings} from './royale-standings.js';
 
 export const tiers=['青铜','白银','黄金','铂金','钻石','星穹'];
 export const START_RATING=1500, START_TIER=2, RATING_K=32, SERIES_GAMES=2;
@@ -110,12 +109,6 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     for(const m of state.seasons.flatMap(s=>s.matches))if(m.status==='computing')m.status='scheduled';
   })();
   let writing=Promise.resolve();
-  let royaleWrites=Promise.resolve();
-  function withRoyaleScores(write) {
-    const result=royaleWrites.then(write);
-    royaleWrites=result.catch(()=>{});
-    return result;
-  }
   function persist() {
     if(root===null)return writing;
     const snapshot=JSON.stringify(state);
@@ -216,17 +209,9 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
   const api={
     tick,
     get computing(){return computing;},
-    async recordRoyale(ranking) {
-      await withRoyaleScores(async()=>{
-        await ready;
-        await ladder?.recordRoyale(ranking);
-        addRoyaleResult(state.royale??={},ranking);
-        await persist();
-      });
-    },
     async snapshot(spectator) {
-      await ready;const at=now(),season=state.seasons.at(-1);
-      const royale=royaleStandings(state.royale);
+      await ready;const royale=await ladder?.royaleSnapshot?.('fighters')??[];
+      const at=now(),season=state.seasons.at(-1);
       if(!season)return {now:at,season:null,live:null,next:null,tiers,ratings:[],previous:null,seasons:[],royale};
       const times=season.status==='active'?estimate(season,at):{};
       const matches=season.matches.map(m=>({...publicMatch(m,at),estimatedStart:times[m.id]??null,prediction:predictionFor(m,spectator)}));
@@ -273,15 +258,13 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
         matches:done.map(m=>publicMatch(m,now())).reverse().slice(0,30)};
     },
     async reset() {
-      await withRoyaleScores(async()=>{
-        await ready;await ticking;await computing;
-        state=fresh();replays.clear();
-        if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true}).catch(()=>{});
-        await ladder?.reset?.();await persist();await tick();
-      });
+      await ready;await ticking;await computing;
+      state=fresh();replays.clear();
+      if(root!==null)await rm(join(root,'replays'),{recursive:true,force:true}).catch(()=>{});
+      await ladder?.reset?.();await persist();await tick();
     },
     start(){if(!timer&&!closed){timer=setInterval(tick,interval);timer.unref?.();tick();}},
-    async close(){closed=true;clearInterval(timer);timer=null;await ticking;await computing;await royaleWrites;await writing;},
+    async close(){closed=true;clearInterval(timer);timer=null;await ticking;await computing;await writing;},
   };
   if(autostart)api.start();
   return api;
