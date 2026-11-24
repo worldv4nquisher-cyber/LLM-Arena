@@ -210,12 +210,13 @@ export function createLeague({path=new URL('./data/league/',import.meta.url),run
     tick,
     get computing(){return computing;},
     async snapshot(spectator) {
-      await ready;const at=now(),season=state.seasons.at(-1);
-      if(!season)return {now:at,season:null,live:null,next:null,tiers,ratings:[],previous:null,seasons:[]};
+      await ready;const royale=await ladder?.royaleSnapshot?.('fighters')??[];
+      const at=now(),season=state.seasons.at(-1);
+      if(!season)return {now:at,season:null,live:null,next:null,tiers,ratings:[],previous:null,seasons:[],royale};
       const times=season.status==='active'?estimate(season,at):{};
       const matches=season.matches.map(m=>({...publicMatch(m,at),estimatedStart:times[m.id]??null,prediction:predictionFor(m,spectator)}));
       const previous=[...state.seasons].reverse().find(s=>s.status==='complete');
-      return {now:at,tiers,...(spectator?{spectator:spectatorScore(spectator)}:{}),season:{number:season.number,status:season.status,startedAt:season.startedAt,endedAt:season.endedAt??null,nextAt:season.nextAt,matches,standings:seasonStandings(season,state.ratings),played:season.matches.filter(m=>m.status==='done').length,total:season.matches.length},
+      return {now:at,tiers,royale,...(spectator?{spectator:spectatorScore(spectator)}:{}),season:{number:season.number,status:season.status,startedAt:season.startedAt,endedAt:season.endedAt??null,nextAt:season.nextAt,matches,standings:seasonStandings(season,state.ratings),played:season.matches.filter(m=>m.status==='done').length,total:season.matches.length},
         live:matches.find(m=>m.status==='live')??null,next:matches.find(m=>m.status==='scheduled')??null,
         ratings:Object.entries(state.ratings).map(([id,r])=>({id,rating:Math.round(r.rating),tier:r.tier,peak:Math.round(r.peak)})).sort((a,b)=>b.rating-a.rating),
         previous:previous?{number:previous.number,champion:previous.champion,final:previous.final,changes:previous.changes,endedAt:previous.endedAt}:null,

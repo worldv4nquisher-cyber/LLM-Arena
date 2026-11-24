@@ -13,6 +13,14 @@ export function badge(id) {
   e.append(node('span',symbols[id]||'✦','league-symbol'),node('b',f.name));return e;
 }
 export function tierChip(tiers,tier) {const e=node('span',tiers[tier]||'','tier-chip');e.dataset.tier=String(tier);return e;}
+export function royaleTable(rows, name = id => fighter(id).name, entrantLabel = '选手') {
+  if(!rows.length)return node('p','暂无混战战绩。','league-status');
+  const table=node('table'),head=node('tr'),thead=node('thead'),body=node('tbody');
+  ['排名',entrantLabel,'场次','夺冠','击倒','积分'].forEach(text=>head.append(node('th',text)));
+  thead.append(head);
+  rows.forEach((r,i)=>{const tr=node('tr');[i+1,name(r.id),r.played,r.wins,r.kos,r.points].forEach(value=>tr.append(node('td',String(value))));body.append(tr);});
+  table.append(thead,body);return table;
+}
 export function matchStatus(m,now) {
   if(m.status==='done')return m.result.winner===null?`平局 ${m.result.wins.join(' : ')}`:`${fighter(m.players[m.result.winner]).name} 胜 ${m.result.wins.join(' : ')}`;
   if(m.status==='live')return `直播中 · ${clock(now-m.startedAt)} / ${clock(m.duration)}`;
@@ -116,7 +124,7 @@ export function mountLeague({onWatch,onUpdate}) {
   }
   async function refresh() {
     const id=++refreshId;
-    try{const r=await fetch(`/api/league?spectator=${spectator}`),json=await r.json();if(!r.ok)throw new Error(json.error);if(id!==refreshId)return;data=json;offset=data.now-Date.now();render();if(data.season)prediction();onUpdate?.(data);}
+    try{const r=await fetch(`/api/league?spectator=${spectator}`),json=await r.json();if(!r.ok)throw new Error(json.error);if(id!==refreshId)return;data=json;offset=data.now-Date.now();render();$('league-royale').replaceChildren(royaleTable(data.royale??[]));if(data.season)prediction();onUpdate?.(data);}
     catch(error){if(id===refreshId)$('league-status').textContent=error.message||'联赛暂时不可用';}
   }
   refresh();setInterval(refresh,5000);setInterval(render,1000);

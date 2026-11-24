@@ -1,23 +1,32 @@
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
+import {addRoyaleResult,royaleStandings} from './royale-standings.js';
 
 const empty=()=>({games:0,wins:0,losses:0,draws:0,mistakes:0,decisions:0,predictionsCorrect:0,predictions:0,predictionsScored:0,predictionsCategoryCorrect:0,predictionsExactCorrect:0,feintsSuccessful:0,feintsAttempted:0,improvements:0,damageImprovement:0,predictionImprovement:0});
 const pairKey=ids=>JSON.stringify([...ids].sort());
+const emptyRoyale=()=>({fighters:{},controllers:{}});
 export function createLadder({path=new URL('./data/ladder.json',import.meta.url)}={}) {
-  let entries={},pairs={},queue=Promise.resolve();
-  const ready=(async()=>{if(path===null)return;try{const data=JSON.parse(await readFile(path,'utf8'));if(data.version===1&&data.entries&&data.pairs){entries=data.entries;pairs=data.pairs;}}catch{/* Persistence is best effort. */}})();
+  let entries={},pairs={},royale=emptyRoyale(),queue=Promise.resolve();
+  const ready=(async()=>{if(path===null)return;try{const data=JSON.parse(await readFile(path,'utf8'));if(data.version===1&&data.entries&&data.pairs){entries=data.entries;pairs=data.pairs;if(data.royale?.fighters&&data.royale?.controllers)royale=data.royale;}}catch{/* Persistence is best effort. */}})();
   async function persist() {
     if(path===null)return;
     try {
       const file=path instanceof URL?path:pathToFileURL(resolve(path));
       await mkdir(dirname(fileURLToPath(file)),{recursive:true});
       const temporary=new URL(`${file.href}.tmp`);
-      await writeFile(temporary,JSON.stringify({version:1,entries,pairs}));await rename(temporary,file);
+      await writeFile(temporary,JSON.stringify({version:1,entries,pairs,royale}));await rename(temporary,file);
     } catch {/* In-memory results remain available. */}
   }
   return {
-    async reset(){await ready;entries={};pairs={};queue=queue.then(persist);await queue;},
+    async reset(){await ready;entries={};pairs={};royale=emptyRoyale();queue=queue.then(persist);await queue;},
+    async royaleSnapshot(group='controllers'){await ready;return royaleStandings(royale[group]);},
+    async recordRoyale(ranking){
+      await ready;
+      addRoyaleResult(royale.fighters,ranking);
+      addRoyaleResult(royale.controllers,ranking,'controller');
+      queue=queue.then(persist);await queue;
+    },
     async snapshot(){await ready;return Object.entries(entries).map(([id,s])=>({id,games:s.games,wins:s.wins,losses:s.losses,draws:s.draws,winRate:s.wins/Math.max(1,s.games),mistakeRate:s.mistakes/Math.max(1,s.decisions),predictionHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionCategoryHitRate:(s.predictionsCategoryCorrect||0)/Math.max(1,s.predictionsScored||0),predictionExactHitRate:(s.predictionsExactCorrect||0)/Math.max(1,s.predictionsScored||0),feintSuccessRate:s.feintsSuccessful/Math.max(1,s.feintsAttempted),betweenRoundImprovement:{damageShare:s.damageImprovement/Math.max(1,s.improvements),predictionRate:s.predictionImprovement/Math.max(1,s.improvements)}})).sort((a,b)=>b.winRate-a.winRate||a.id.localeCompare(b.id));},
     async memory(ids){await ready;const saved=pairs[pairKey(ids)]||[];return structuredClone(saved.map(s=>({...s,sides:ids[0]===ids[1]?s.sides:s.controllerSides.map(id=>ids.indexOf(id))})));},
     async record(replay){

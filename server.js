@@ -11,9 +11,15 @@ import { runSeries } from './fight-match.js';
 import { createLadder } from './fight-ladder.js';
 import { createLeague } from './fight-league.js';
 import { createDanmaku } from './fight-danmaku.js';
+import { runRoyale } from './royale-match.js';
+import { defaultRoyalePlayers } from './royale-standings.js';
 
 const assets = new Map([
   ['/', ['fight.html', 'text/html; charset=utf-8']],
+  ['/royale', ['royale.html', 'text/html; charset=utf-8']],
+  ['/royale.js', ['royale.js', 'text/javascript; charset=utf-8']],
+  ['/royale-scene.js', ['royale-scene.js', 'text/javascript; charset=utf-8']],
+  ['/royale.css', ['royale.css', 'text/css; charset=utf-8']],
   ['/classic', ['index.html', 'text/html; charset=utf-8']],
   ['/fight.css', ['fight.css', 'text/css; charset=utf-8']],
   ['/fight.js', ['fight.js', 'text/javascript; charset=utf-8']],
@@ -79,13 +85,14 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
   const validJSON = req => req.headers['sec-fetch-site'] !== 'cross-site' &&
     req.headers['content-type']?.split(';')[0].trim() === 'application/json' &&
     (!req.headers.origin || req.headers.origin === `http://${req.headers.host}` || req.headers.origin === `https://${req.headers.host}`);
-  function reserveJob() {
+  const leagueAdmin = req => env.LEAGUE_ADMIN_TOKEN && req.headers.authorization === `Bearer ${env.LEAGUE_ADMIN_TOKEN}`;
+  function reserveJob(event) {
     while(jobs.size>=20) {
       const finished=[...jobs].find(([,job])=>job.status!=='running');
       if(!finished)return null;
       jobs.delete(finished[0]);
     }
-    const id=randomUUID(),job={status:'running',progress:{game:0,round:0,turn:0}};
+    const id=randomUUID(),job={status:'running',progress:{game:0,round:0,turn:0},...(event?{event}:{})};
     jobs.set(id,job);return {id,job};
   }
   const brain=(id,seed)=>id==='demo:flaky'?createFlakyController({seed}):id.startsWith('builtin:')?createBuiltinController(id.slice(8),{seed}):liveController(id,models[id],{request});
@@ -139,8 +146,7 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     if(req.method==='GET'&&(m=/^\/api\/league\/fighters\/([\w-]{1,40})$/.exec(path))){const found=await league.fighter(m[1]);return json(res,found?200:404,found||{error:'找不到选手。'});}
     if(req.method==='POST'&&path==='/api/league/reset'){
       if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 请求。'});
-      const token=env.LEAGUE_ADMIN_TOKEN;
-      if(!token||req.headers.authorization!==`Bearer ${token}`)return json(res,403,{error:'需要联赛管理员令牌。'});
+      if(!leagueAdmin(req))return json(res,403,{error:'需要联赛管理员令牌。'});
       await league.reset();return json(res,200,{ok:true});
     }
     return json(res,404,{error:'未找到。'});
@@ -171,9 +177,40 @@ export function createArena({ env = process.env, turnDelay, request = fetch, lad
     if (req.method === 'GET' && path === '/api/fighters') return json(res, 200, fighters);
     if (req.method === 'GET' && path === '/api/controllers') return json(res, 200, controllers);
     if (req.method === 'GET' && path === '/api/ladder') return json(res, 200, await ladder.snapshot());
+    if (req.method === 'GET' && path === '/api/ladder/royale') return json(res, 200, await ladder.royaleSnapshot());
+    if (req.method === 'GET' && /^\/api\/royale\/[^/]+$/.test(path)) {
+      const job=jobs.get(path.split('/').at(-1));
+      return job?.event==='royale'?json(res,200,job):json(res,404,{error:'找不到混战任务。'});
+    }
+    if (req.method === 'POST' && path === '/api/royale') {
+      if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 比赛请求。'});
+      const input=await matchInput(req);
+      const seed=input?.seed??randomInt(0x100000000);
+      const ids=input?.controllers??defaultRoyalePlayers.map(id=>'builtin:'+id);
+      if(!input||typeof input!=='object'||Array.isArray(input)||!Number.isSafeInteger(seed)||seed<0||seed>0xffffffff||
+        !Array.isArray(ids)||ids.length!==5||new Set(ids).size!==5||!ids.every(id=>controllers.some(c=>c.id===id&&c.mode!=='demo'))) {
+        return json(res,400,{error:'混战需要五位不同的有效控制器和有效种子。'});
+      }
+      const isLive=ids.some(id=>models[id]?.mode==='live');
+      if(isLive&&!leagueAdmin(req))return json(res,403,{error:'真实模型混战需要联赛管理员令牌。'});
+      if(isLive&&liveInProgress)return json(res,429,{error:'已有真实模型对局进行中，请稍后再试。'});
+      const reserved=reserveJob('royale');
+      if(!reserved)return json(res,429,{error:'比赛任务已满，请稍后重试。'});
+      const {id,job}=reserved;
+      if(isLive)liveInProgress=true;
+      setImmediate(async()=>{
+        try {
+          const replay=await runRoyale({players:defaultRoyalePlayers,controllers:ids.map(c=>brain(c,seed)),seed,deadlines,onProgress:p=>{job.progress=p;}});
+          await ladder.recordRoyale(replay.ranking);
+          job.replay=replay;job.status='done';
+        }catch(error){job.status='error';job.error=error instanceof ModelError?error.message:'混战计算失败。';}
+        finally{if(isLive)liveInProgress=false;}
+      });
+      return json(res,202,{id});
+    }
     if (req.method === 'GET' && (/^\/api\/fights\/[^/]+$/.test(path)||/^\/api\/ladder\/run\/[^/]+$/.test(path))) {
       const job=jobs.get(path.split('/').at(-1));
-      return json(res,job?200:404,job||{error:'找不到比赛任务。'});
+      return job&&!job.event?json(res,200,job):json(res,404,{error:'找不到比赛任务。'});
     }
     if(req.method==='POST' && path==='/api/ladder/run') {
       if(!validJSON(req))return json(res,415,{error:'仅接受本站的 JSON 比赛请求。'});

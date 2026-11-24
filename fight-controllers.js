@@ -1,5 +1,6 @@
 import {seededRng,defaultCustom,moveCategory} from './public/strategy-rules.js';
 import {ModelError} from './opponents.js';
+import {decideRoyale} from './royale-match.js';
 
 export const personalities=['gpt','claude','gemini','deepseek','grok'];
 export function createBuiltinController(id, {seed=1}={}) {
@@ -15,6 +16,7 @@ export function createBuiltinController(id, {seed=1}={}) {
       return {picks,ultimate,custom:{...defaultCustom,name:'破阵拳',damage:2,speed:3},reason:'依据射程选择攻防组合'};
     },
     async decide(v) {
+      if(v.event==='royale') return decideRoyale(v,id,rng);
       const legal=v.legalMoves,has=m=>legal.some(x=>x.id===m),counts={};
       for(const b of v.recentMoves) {const m=b.moves[1-(v.you.cell<v.opponent.cell?0:1)];counts[m]=(counts[m]||0)+1;}
       const predict=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'step_in';
@@ -96,7 +98,10 @@ export function liveController(id,model,{request=fetch}={}) {
   async function ask(method,view,{signal:parentSignal}={}) {
     const quick=method==='decide'&&view.you?.budgetLeft===0;
     const schema=method==='decide'?'{"move":"legal move id","reason":"中文一句话，最多40字","predict":"opponent move id or category","plan":[{"if":"always|opponent_guarded|hit|missed|was_hit|near|mid|far","then":"move id"}]}':method==='review'?'{"notes":"中文复盘一句话","adjust":"strategy adjustment"}':view.phase==='ban'?'{"ban":"pool move id"}':'{"picks":["four distinct available pool ids"],"ultimate":"one ultimate id","custom":{"name":"中文名","damage":2,"range":["near","mid"],"speed":3},"reason":"中文一句话"}';
-    const prompt=[quick?'快速决策 Quick turn: choose ONLY a legal quick move. Reply terse JSON.':`策略格斗：${view.rulesSummary||'同时出招，投技破防，快招打断慢招，侦察揭示底牌。'}\n${englishRules}`,`Phase: ${method}${view.phase?`/${view.phase}`:''}`,`Required JSON schema (plan optional, max 3): ${schema}`, 'Prediction categories: attack/throw/defend/move/feint/scout/rest; defend includes guard/parry/evade/barrier.',`View JSON: ${JSON.stringify(view)}`].join('\n');
+    const viewJSON=`View JSON: ${JSON.stringify(view)}`;
+    const prompt=(view.event==='royale'
+      ? [`机器人混战：${view.rulesSummary}`,'Return JSON only: {"move":"one exact legalMoves id","reason":"中文一句话，最多40字","callout":"optional living rival id to propose focusing"}',viewJSON]
+      : [quick?'快速决策 Quick turn: choose ONLY a legal quick move. Reply terse JSON.':`策略格斗：${view.rulesSummary||'同时出招，投技破防，快招打断慢招，侦察揭示底牌。'}\n${englishRules}`,`Phase: ${method}${view.phase?`/${view.phase}`:''}`,`Required JSON schema (plan optional, max 3): ${schema}`, 'Prediction categories: attack/throw/defend/move/feint/scout/rest; defend includes guard/parry/evade/barrier.',viewJSON]).join('\n');
     const openai=model.provider==='openai',ms=Math.min(model.timeout??30000,quick?5000:15000),timeout=AbortSignal.timeout(ms),signal=parentSignal?AbortSignal.any([parentSignal,timeout]):timeout;
     let response,data;
     try {
